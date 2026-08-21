@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-dg.local/schemas/items.schema.json",
+  "title": "AI-dg extracted items",
+  "type": "object",
+  "required": ["schema_version", "items"],
+  "properties": {
+    "schema_version": {"const": "0.1"},
+    "project": {"type": "string"},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "quantity", "confidence", "review_required", "source"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "item_code": {"type": ["string", "null"]},
+          "item_name": {"type": ["string", "null"]},
+          "part_name": {"type": ["string", "null"]},
+          "source_material_code": {"type": ["string", "null"]},
+          "material_code": {"type": ["string", "null"]},
+          "material_name": {"type": ["string", "null"]},
+          "length_mm": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "width_mm": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "thickness_mm": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "quantity": {"type": "integer", "minimum": 1},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "review_required": {"type": "boolean"},
+          "notes": {"type": ["string", "null"]},
+          "source": {
+            "type": "object",
+            "required": ["pdf", "page", "evidence"],
+            "properties": {
+              "pdf": {"type": "string", "minLength": 1},
+              "page": {"type": "integer", "minimum": 1},
+              "evidence": {"type": "string", "minLength": 1},
+              "bbox": {
+                "type": ["array", "null"],
+                "minItems": 4,
+                "maxItems": 4,
+                "items": {"type": "number"}
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
