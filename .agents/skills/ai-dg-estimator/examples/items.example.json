@@ -1,0 +1,50 @@
+{
+  "schema_version": "0.1",
+  "project": "DEMO-NOI-THAT",
+  "items": [
+    {
+      "id": "TB01-HONG-TRAI",
+      "item_code": "TB-01",
+      "item_name": "Tu bep duoi",
+      "part_name": "Hong trai",
+      "source_material_code": "WD-03",
+      "material_code": "MDF18-MR",
+      "material_name": "MDF chong am 18 mm",
+      "length_mm": 720,
+      "width_mm": 560,
+      "thickness_mm": 18,
+      "quantity": 2,
+      "confidence": 0.98,
+      "review_required": false,
+      "notes": null,
+      "source": {
+        "pdf": "noi-that.pdf",
+        "page": 17,
+        "evidence": "TB-01 / WD-03 / 720 x 560 x 18 / SL 2",
+        "bbox": null
+      }
+    },
+    {
+      "id": "TB01-DAY",
+      "item_code": "TB-01",
+      "item_name": "Tu bep duoi",
+      "part_name": "Day tu",
+      "source_material_code": "WD-03",
+      "material_code": "MDF18-MR",
+      "material_name": "MDF chong am 18 mm",
+      "length_mm": 800,
+      "width_mm": 560,
+      "thickness_mm": 18,
+      "quantity": 1,
+      "confidence": 0.82,
+      "review_required": true,
+      "notes": "Can kiem tra lai chieu dai tren mat cat.",
+      "source": {
+        "pdf": "noi-that.pdf",
+        "page": 18,
+        "evidence": "TB-01 day tu, width 560; length candidate 800",
+        "bbox": null
+      }
+    }
+  ]
+}
