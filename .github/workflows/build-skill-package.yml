@@ -1,0 +1,52 @@
+name: Build AI-dg Skill Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.agents/skills/ai-dg-estimator/**'
+      - 'package_chatgpt.py'
+      - '.github/workflows/build-skill-package.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate skill root
+        run: |
+          test -f .agents/skills/ai-dg-estimator/SKILL.md
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('.agents/skills/ai-dg-estimator/SKILL.md').read_text(encoding='utf-8')
+          assert text.startswith('---\n'), 'SKILL.md must start with YAML frontmatter'
+          assert '\nname: ai-dg-estimator\n' in text, 'skill name missing'
+          assert '\ndescription:' in text, 'skill description missing'
+          print('Basic SKILL.md validation passed')
+          PY
+
+      - name: Build upload package
+        run: python package_chatgpt.py
+
+      - name: Inspect ZIP root
+        run: |
+          unzip -l dist/ai-dg-estimator.zip
+          unzip -p dist/ai-dg-estimator.zip SKILL.md | head -n 12
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-dg-estimator-chatgpt-test
+          path: dist/ai-dg-estimator.zip
+          if-no-files-found: error
