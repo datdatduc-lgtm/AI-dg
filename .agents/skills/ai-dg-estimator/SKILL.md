@@ -4,8 +4,8 @@ description: Analyze interior/CNC drawing packages, reconcile PDF with CAD and o
 license: MIT
 compatibility: Agent Skills / ChatGPT / Codex / OpenCode
 metadata:
-  version: "0.2.1-alpha"
-  stage: "chatgpt-geometry-test"
+  version: "0.2.2-alpha"
+  stage: "chatgpt-work-compatibility-test"
 ---
 
 # AI-dg Estimator
@@ -251,6 +251,17 @@ An item is ready for SketchUp reconstruction only when:
 - PDF/CAD conflicts affecting geometry are resolved;
 - source units and project origin are known.
 
+## Runtime compatibility
+
+The skill methodology must remain usable even when the current runtime does not provide optional Python packages.
+
+- Do not fail skill installation merely because `jsonschema`, `openpyxl`, or `PyMuPDF` is absent.
+- Use `scripts/smoke_test.py` for compatibility verification; its core path requires only the Python standard library.
+- `scripts/validate_items.py` uses full JSON Schema validation when `jsonschema` is present and a safety-critical stdlib fallback otherwise.
+- Excel export is optional during installation/runtime validation. If `openpyxl` is unavailable, report the exporter as unavailable instead of treating the skill itself as invalid.
+- PDF parsing through `scripts/analyze_pdf.py` requires PyMuPDF; when unavailable in ChatGPT Work, use the platform's native file-reading capability for methodology tests and do not claim the local parser ran.
+- Codex/OpenCode/local environments may install the optional dependencies from `pyproject.toml` for deterministic PDF/Excel tooling.
+
 ## Existing deterministic tools
 
-The repository also contains deterministic V0.1 scripts for PDF extraction, validation, BOM calculations and Excel export. Use them when the runtime supports them, but do not let their simpler schema override the geometry-first methodology above.
+The repository also contains deterministic scripts for PDF extraction, validation, BOM calculations and Excel export. Use them when the runtime supports them, but do not let their simpler schema override the geometry-first methodology above.
