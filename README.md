@@ -32,9 +32,7 @@ BOM / Excel / SketchUp reconstruction plan
 
 PDF and CAD are treated as two representations of the same authored drawing. Overlapping facts must be compared by **geometric span**, not by raw numeric values alone. A section/detail may refine a coarser elevation dimension without creating a conflict.
 
-## Skill location
-
-The canonical portable skill lives at:
+## Canonical skill source
 
 ```text
 .agents/skills/ai-dg-estimator/
@@ -57,6 +55,35 @@ Main files:
 ├─ data/
 ├─ scripts/
 └─ pyproject.toml
+```
+
+The GitHub `main` branch is the canonical source of truth. ChatGPT Work, Codex and OpenCode packages should be built from this same directory instead of being edited as separate copies.
+
+## ChatGPT Work package
+
+See [`CHATGPT_WORK.md`](CHATGPT_WORK.md) for the Work-specific installation and acceptance-test flow.
+
+GitHub Actions builds an upload-ready package:
+
+```text
+AI-dg-Work-v0.2.1-alpha.zip
+```
+
+The ZIP root contains `SKILL.md` directly.
+
+Build locally from repository root:
+
+```bash
+python package_chatgpt.py
+```
+
+Outputs:
+
+```text
+dist/AI-dg-Work-v0.2.1-alpha.zip
+dist/AI-dg-Work-v0.2.1-alpha.sha256
+dist/AI-dg-Work-v0.2.1-alpha-contents.txt
+dist/ai-dg-estimator.zip
 ```
 
 ## Geometry-first rule
@@ -110,34 +137,7 @@ Item
 
 Thickness, finish, core, edge, film/decal, glass, adhesive and hardware remain separate facts when the drawing distinguishes them.
 
-## Test in ChatGPT first
-
-AI-dg includes a GitHub Actions workflow that builds an upload-oriented ZIP whose root contains `SKILL.md` directly.
-
-### Option A — GitHub Actions artifact
-
-1. Open the repository's **Actions** tab.
-2. Open **Build AI-dg Skill Package**.
-3. Open the latest successful run.
-4. Download artifact `ai-dg-estimator-chatgpt-test`.
-5. Extract the downloaded artifact if GitHub wraps it in another ZIP; the target skill file is `ai-dg-estimator.zip`.
-6. Upload the skill in an eligible ChatGPT Skills workspace.
-
-### Option B — build locally
-
-From the repository root:
-
-```bash
-python package_chatgpt.py
-```
-
-Output:
-
-```text
-dist/ai-dg-estimator.zip
-```
-
-## Recommended next acceptance test
+## Recommended ChatGPT Work acceptance test
 
 Use a small drawing you understand well and ask:
 
@@ -170,7 +170,7 @@ Then follow:
 .agents/skills/ai-dg-estimator/references/chatgpt-test-protocol.md
 ```
 
-The methodology gate is now **22/26 or better**, with no critical fabrication and no raw-number reconciliation error on hierarchical dimensions.
+The methodology gate is **22/26 or better**, with no critical fabrication and no raw-number reconciliation error on hierarchical dimensions.
 
 ## Important runtime limitation
 
@@ -184,9 +184,9 @@ At this stage AI-dg must be honest about file accessibility:
 
 This limitation is intentional: first verify the geometry/reconciliation method, then let Codex implement the missing adapters against concrete failed tests.
 
-## Existing deterministic V0.1 tools
+## Existing deterministic tools
 
-The repository still contains the original deterministic pipeline:
+The repository still contains the deterministic V0.1 pipeline:
 
 ```bash
 python scripts/analyze_pdf.py path/to/drawing.pdf --project project --render
@@ -195,7 +195,7 @@ python scripts/calculate_bom.py project/extracted/items.json --output project/ex
 python scripts/export_excel.py project/extracted/items.json project/extracted/bom.json --output project/output/AI-dg-estimate.xlsx
 ```
 
-V0.1 uses PyMuPDF, `jsonschema`, and `openpyxl`.
+Dependencies: PyMuPDF, `jsonschema`, and `openpyxl`.
 
 ## Core accuracy rules
 
