@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1",
+  "materials": [
+    {
+      "code": "MDF18-MR",
+      "name": "MDF chong am 18 mm",
+      "sheet_length_mm": 2440,
+      "sheet_width_mm": 1220,
+      "waste_factor": 0.1,
+      "notes": "Example only. Replace with verified project/company material data."
+    }
+  ]
+}
