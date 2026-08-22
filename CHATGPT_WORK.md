@@ -5,19 +5,28 @@ This repository keeps **one canonical AI-dg skill source** for ChatGPT Work, Cod
 Current test version:
 
 - Skill: `ai-dg-estimator`
-- Version: `0.2.1-alpha`
-- Stage: `chatgpt-geometry-test`
+- Version: `0.2.2-alpha`
+- Stage: `chatgpt-work-compatibility-test`
 - Canonical source: `.agents/skills/ai-dg-estimator/`
+
+## What changed in 0.2.2-alpha
+
+This build keeps the geometry-first drawing methodology from 0.2.1 and fixes ChatGPT Work compatibility issues seen during installation testing:
+
+- `scripts/validate_items.py` no longer fails if `jsonschema` is unavailable; it uses a safety-critical stdlib fallback validator.
+- `scripts/smoke_test.py` now has a standard-library core path and treats Excel export as optional when `openpyxl` is unavailable.
+- third-party Python packages are optional runtime extras instead of mandatory install dependencies.
+- missing optional packages must not be treated as a reason to reject the skill itself.
 
 ## Upload package
 
-The GitHub Actions workflow **Build AI-dg Skill Package** builds an upload-ready archive:
+The GitHub Actions workflow **Build AI-dg Skill Package** builds:
 
 ```text
-AI-dg-Work-v0.2.1-alpha.zip
+AI-dg-Work-v0.2.2-alpha.zip
 ```
 
-The ZIP root contains `SKILL.md` directly, followed by the skill resources:
+The ZIP root contains `SKILL.md` directly, followed by:
 
 ```text
 SKILL.md
@@ -29,7 +38,23 @@ scripts/
 pyproject.toml
 ```
 
-This is intentional. Do not upload the whole GitHub repository as the skill package.
+Do not upload the whole GitHub repository as the skill package.
+
+## Recommended installation path
+
+Prefer the official Skills upload UI instead of asking a Work chat to push a locally-created skill repository:
+
+```text
+Skills → Create → Upload from your computer
+```
+
+Select:
+
+```text
+AI-dg-Work-v0.2.2-alpha.zip
+```
+
+If the previous Work chat reports a local commit plus HTTP 422 while pushing to the skill repository, that attempt did not install the skill. Retry with the Skills upload UI using this new package.
 
 ## Build locally
 
@@ -42,25 +67,25 @@ python package_chatgpt.py
 Outputs:
 
 ```text
-dist/AI-dg-Work-v0.2.1-alpha.zip
-dist/AI-dg-Work-v0.2.1-alpha.sha256
-dist/AI-dg-Work-v0.2.1-alpha-contents.txt
+dist/AI-dg-Work-v0.2.2-alpha.zip
+dist/AI-dg-Work-v0.2.2-alpha.sha256
+dist/AI-dg-Work-v0.2.2-alpha-contents.txt
 dist/ai-dg-estimator.zip
 ```
 
-`ai-dg-estimator.zip` is a compatibility alias of the same package.
+## Local/Codex runtime extras
 
-## Install / create in ChatGPT Work
+The core Work compatibility path does not require third-party packages. For deterministic PDF parsing, JSON Schema validation and Excel export in Codex/OpenCode/local environments, install:
 
-Use ChatGPT Work's Skills creation/upload flow and provide `AI-dg-Work-v0.2.1-alpha.zip`.
+```bash
+python -m pip install -e ".[runtime]"
+```
 
-If ChatGPT Work asks what the skill should do, use this intent:
+## Skill intent
 
 > AI-dg reads interior/joinery/CNC drawing packages using a geometry-first method. It links plan/elevation/side/section/detail views as projections of one physical object, reconstructs X/Y/Z geometry, maps materials to physical regions/layers/surfaces, reconciles PDF with CAD and optional SketchUp, prevents duplicate counting, and only performs takeoff from evidence-backed geometry. Unknowns and source conflicts must remain explicit.
 
 ## First acceptance test
-
-Use a drawing that you already understand well. Recommended prompt:
 
 ```text
 Dùng AI-dg phân tích bộ bản vẽ này. Chưa báo giá và chưa dựng SketchUp.
@@ -87,7 +112,7 @@ Chỉ coi hai kích thước là MISMATCH khi chúng đo cùng geometric span nh
 
 ## Geometry test rule
 
-A response fails the test if it only lists dimensions/materials without reconstructing the physical relationship between views.
+A response fails if it only lists dimensions/materials without reconstructing the physical relationship between views.
 
 Example:
 
@@ -126,4 +151,4 @@ when methodology is stable
 use Codex to implement CAD/SKP parsers + SketchUp Ruby reconstruction
 ```
 
-The GitHub source is the canonical source of truth. Do not maintain a separate manually edited Work-only skill unless a platform-specific compatibility change becomes necessary.
+The GitHub source is the canonical source of truth.
