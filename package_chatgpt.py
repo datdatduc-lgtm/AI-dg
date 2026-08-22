@@ -2,8 +2,8 @@
 """Build upload-ready AI-dg Agent Skill archives for ChatGPT Work.
 
 The archive places SKILL.md at the ZIP root instead of preserving the repository's
-.agents/skills/... wrapper. The same skill source remains portable for ChatGPT,
-Codex and OpenCode.
+.agents/skills/... wrapper. The same canonical skill source remains portable for
+ChatGPT Work, Codex and OpenCode.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 SKILL_DIR = ROOT / ".agents" / "skills" / "ai-dg-estimator"
 DIST_DIR = ROOT / "dist"
-VERSION = "0.2.1-alpha"
+VERSION = "0.2.2-alpha"
 DEFAULT_NAME = f"AI-dg-Work-v{VERSION}"
 REQUIRED_FILES = [
     "SKILL.md",
@@ -26,6 +26,8 @@ REQUIRED_FILES = [
     "references/pdf-cad-reconciliation.md",
     "references/material-rules.md",
     "references/chatgpt-test-protocol.md",
+    "scripts/smoke_test.py",
+    "scripts/validate_items.py",
 ]
 
 
@@ -39,7 +41,7 @@ def validate_skill() -> None:
     skill_text = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
     if not skill_text.startswith("---\n"):
         raise SystemExit("SKILL.md must start with YAML frontmatter")
-    if 'version: "0.2.1-alpha"' not in skill_text:
+    if f'version: "{VERSION}"' not in skill_text:
         raise SystemExit("SKILL.md version does not match package version")
 
 
@@ -84,7 +86,6 @@ def build(output: Path | None = None) -> Path:
     manifest_path = archive.with_name(archive.stem + "-contents.txt")
     manifest_path.write_text("\n".join(names) + "\n", encoding="utf-8")
 
-    # Stable alias for tools/documentation that expect the old generic name.
     alias = DIST_DIR / "ai-dg-estimator.zip"
     if alias.resolve() != archive.resolve():
         shutil.copy2(archive, alias)
