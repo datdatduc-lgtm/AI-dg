@@ -34,26 +34,29 @@ jobs:
           assert text.startswith('---\n'), 'SKILL.md must start with YAML frontmatter'
           assert '\nname: ai-dg-estimator\n' in text, 'skill name missing'
           assert '\ndescription:' in text, 'skill description missing'
-          assert 'version: "0.2.1-alpha"' in text, 'unexpected skill version'
+          assert 'version: "0.2.2-alpha"' in text, 'unexpected skill version'
           print('Basic SKILL.md validation passed')
           PY
+
+      - name: Run dependency-light compatibility smoke test
+        run: python .agents/skills/ai-dg-estimator/scripts/smoke_test.py
 
       - name: Build ChatGPT Work upload package
         run: python package_chatgpt.py
 
       - name: Inspect ZIP root
         run: |
-          unzip -l dist/AI-dg-Work-v0.2.1-alpha.zip
-          unzip -p dist/AI-dg-Work-v0.2.1-alpha.zip SKILL.md | head -n 16
-          cat dist/AI-dg-Work-v0.2.1-alpha.sha256
+          unzip -l dist/AI-dg-Work-v0.2.2-alpha.zip
+          unzip -p dist/AI-dg-Work-v0.2.2-alpha.zip SKILL.md | head -n 16
+          cat dist/AI-dg-Work-v0.2.2-alpha.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AI-dg-Work-v0.2.1-alpha
+          name: AI-dg-Work-v0.2.2-alpha
           path: |
-            dist/AI-dg-Work-v0.2.1-alpha.zip
-            dist/AI-dg-Work-v0.2.1-alpha.sha256
-            dist/AI-dg-Work-v0.2.1-alpha-contents.txt
+            dist/AI-dg-Work-v0.2.2-alpha.zip
+            dist/AI-dg-Work-v0.2.2-alpha.sha256
+            dist/AI-dg-Work-v0.2.2-alpha-contents.txt
             dist/ai-dg-estimator.zip
           if-no-files-found: error
