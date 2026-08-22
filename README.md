@@ -4,9 +4,9 @@ AI-dg is a portable Agent Skill for reading interior/joinery/CNC drawing package
 
 ## Current stage
 
-**V0.2.1-alpha — ChatGPT geometry methodology test**
+**V0.2.2-alpha — ChatGPT Work compatibility + geometry methodology test**
 
-The immediate goal is to test whether the skill can reconstruct the **physical 3D logic** of real drawings before asking Codex to build deeper CAD/SKP parsers and Ruby reconstruction code.
+The immediate goal is to test whether the skill can reconstruct the **physical 3D logic** of real drawings in ChatGPT Work before asking Codex to build deeper CAD/SKP parsers and Ruby reconstruction code.
 
 Current intended workflow:
 
@@ -57,21 +57,38 @@ Main files:
 └─ pyproject.toml
 ```
 
-The GitHub `main` branch is the canonical source of truth. ChatGPT Work, Codex and OpenCode packages should be built from this same directory instead of being edited as separate copies.
+The GitHub `main` branch is the canonical source of truth. ChatGPT Work, Codex and OpenCode packages are built from this same directory.
 
 ## ChatGPT Work package
 
-See [`CHATGPT_WORK.md`](CHATGPT_WORK.md) for the Work-specific installation and acceptance-test flow.
+See [`CHATGPT_WORK.md`](CHATGPT_WORK.md).
 
-GitHub Actions builds an upload-ready package:
+GitHub Actions builds:
 
 ```text
-AI-dg-Work-v0.2.1-alpha.zip
+AI-dg-Work-v0.2.2-alpha.zip
 ```
 
 The ZIP root contains `SKILL.md` directly.
 
-Build locally from repository root:
+### Why 0.2.2
+
+A ChatGPT Work installation test of 0.2.1 successfully unpacked and validated skill metadata, but its local smoke test stopped because `jsonschema` was unavailable. V0.2.2 makes the installation/compatibility path dependency-light:
+
+- `validate_items.py` has a stdlib fallback when `jsonschema` is absent;
+- `smoke_test.py` runs its core checks without third-party packages;
+- Excel validation is optional when `openpyxl` is unavailable;
+- PyMuPDF/openpyxl/jsonschema are optional runtime extras for Codex/OpenCode/local deterministic tooling.
+
+Recommended installation path in ChatGPT is the Skills UI:
+
+```text
+Skills → Create → Upload from your computer
+```
+
+Choose `AI-dg-Work-v0.2.2-alpha.zip` rather than asking a Work chat to push a locally created skill repository.
+
+## Build locally
 
 ```bash
 python package_chatgpt.py
@@ -80,10 +97,16 @@ python package_chatgpt.py
 Outputs:
 
 ```text
-dist/AI-dg-Work-v0.2.1-alpha.zip
-dist/AI-dg-Work-v0.2.1-alpha.sha256
-dist/AI-dg-Work-v0.2.1-alpha-contents.txt
+dist/AI-dg-Work-v0.2.2-alpha.zip
+dist/AI-dg-Work-v0.2.2-alpha.sha256
+dist/AI-dg-Work-v0.2.2-alpha-contents.txt
 dist/ai-dg-estimator.zip
+```
+
+For deterministic PDF/Excel tooling in Codex/OpenCode/local environments:
+
+```bash
+python -m pip install -e ".[runtime]"
 ```
 
 ## Geometry-first rule
@@ -104,28 +127,20 @@ Item
 └─ unresolved geometry
 ```
 
-Example dimension pattern:
+Example:
 
 ```text
 Elevation: 800 + 300 = 1100
 Section:   750 + 50 + 300 = 1100
 ```
 
-AI-dg must determine whether `750 + 50` subdivides the same lower `800` region. If yes, the correct relationship is:
-
-```text
-DIMENSION_REFINEMENT
-```
-
-not a mismatch.
+AI-dg must determine whether `750 + 50` subdivides the same lower `800` region. If yes, the correct relationship is `DIMENSION_REFINEMENT`, not a mismatch.
 
 A real conflict exists only when two sources give different values for the **same axis + same start/end geometric span**.
 
 ## Material spatial mapping
 
-AI-dg should not stop at a flat material list when the drawing shows placement.
-
-It should connect materials to geometry, for example:
+AI-dg should connect materials to geometry rather than stop at a flat material list.
 
 ```text
 Item
@@ -138,8 +153,6 @@ Item
 Thickness, finish, core, edge, film/decal, glass, adhesive and hardware remain separate facts when the drawing distinguishes them.
 
 ## Recommended ChatGPT Work acceptance test
-
-Use a small drawing you understand well and ask:
 
 ```text
 Dùng AI-dg phân tích bộ bản vẽ này. Chưa báo giá và chưa dựng SketchUp.
@@ -164,38 +177,13 @@ Không được suy đoán theo thói quen nghề.
 Chỉ coi hai kích thước là MISMATCH khi chúng đo cùng geometric span nhưng khác giá trị.
 ```
 
-Then follow:
-
-```text
-.agents/skills/ai-dg-estimator/references/chatgpt-test-protocol.md
-```
-
 The methodology gate is **22/26 or better**, with no critical fabrication and no raw-number reconciliation error on hierarchical dimensions.
 
 ## Important runtime limitation
 
-The methodology is ahead of the binary adapters.
-
-At this stage AI-dg must be honest about file accessibility:
-
-- PDF can be used to test drawing reasoning immediately when the ChatGPT surface can inspect it.
-- CAD/SKP should only be described as parsed when the current runtime actually exposes their structured contents.
+- PDF can be used to test drawing reasoning when the ChatGPT surface can inspect it.
+- CAD/SKP should only be described as parsed when the runtime actually exposes their structured contents.
 - If a binary CAD/SKP adapter is unavailable, AI-dg must return `adapter_unavailable` rather than inventing geometry or metadata.
-
-This limitation is intentional: first verify the geometry/reconciliation method, then let Codex implement the missing adapters against concrete failed tests.
-
-## Existing deterministic tools
-
-The repository still contains the deterministic V0.1 pipeline:
-
-```bash
-python scripts/analyze_pdf.py path/to/drawing.pdf --project project --render
-python scripts/validate_items.py project/extracted/items.json
-python scripts/calculate_bom.py project/extracted/items.json --output project/extracted/bom.json
-python scripts/export_excel.py project/extracted/items.json project/extracted/bom.json --output project/output/AI-dg-estimate.xlsx
-```
-
-Dependencies: PyMuPDF, `jsonschema`, and `openpyxl`.
 
 ## Core accuracy rules
 
