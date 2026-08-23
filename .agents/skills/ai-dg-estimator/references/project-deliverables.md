@@ -2,7 +2,7 @@
 
 This contract applies to Codex/OpenCode/local project runs using an AI-dg workspace.
 
-The goal is to prevent a run from stopping at analysis text while omitting the practical files the user needs.
+The goal is to prevent a run from stopping at analysis text while omitting the practical files the user needs, while also preventing user-facing deliverables from being polluted with AI/debug metadata.
 
 ## 1. Mandatory fresh-run start
 
@@ -33,22 +33,11 @@ OUTPUT/RUBY/<item-code>.rb
 
 Do not make Ruby generation optional merely because project placement, project quantity, fabrication BOM or procurement BOM is blocked.
 
-The Ruby file must reconstruct the local component at a local origin from the current Geometry Ledger.
-
-If unresolved geometry is still useful for visual testing it may be modeled only as:
-
-```text
-REVIEW_REQUIRED
-PLACEHOLDER_GUIDE
-```
-
-and must retain source/readiness metadata.
-
-If Component Geometry is `BLOCKED`, create no fake solid. Record the reason in Review Queue and readiness output.
+The Ruby file must reconstruct the local component at a local origin from the current Geometry Ledger. Unresolved geometry may be modeled only as `REVIEW_REQUIRED` or `PLACEHOLDER_GUIDE` and must retain source/readiness metadata inside the model/script rather than the normal material Excel.
 
 ## 3. Projection-back requirement for Ruby
 
-Before the run is considered geometrically successful, the Ruby geometry must be designed to reproduce the linked source views:
+Ruby geometry must be designed to reproduce linked source views:
 
 - front/elevation;
 - side;
@@ -58,39 +47,11 @@ Before the run is considered geometrically successful, the Ruby geometry must be
 
 A hidden section refinement must not automatically become a visible front seam.
 
-For example, if a 50 mm section dimension is the embed depth of glass inside a slot, Ruby must model a hidden slot/embed relationship rather than a visible 50 mm front band.
+If SketchUp was not actually executed, report `RUBY_READY_NOT_EXECUTED` and do not claim a `.skp` or preview image was created.
 
-## 4. Ruby should export model preview images
+## 4. Material specification synthesis
 
-Project Ruby files should include a preview-export block when practical.
-
-When the script resides in:
-
-```text
-<PROJECT>/OUTPUT/RUBY/<item>.rb
-```
-
-it should write preview images to:
-
-```text
-<PROJECT>/OUTPUT/IMAGES/<item>_iso.png
-<PROJECT>/OUTPUT/IMAGES/<item>_front.png
-<PROJECT>/OUTPUT/IMAGES/<item>_side.png
-```
-
-The images are for projection checking and Excel summaries. They are not fabrication evidence by themselves.
-
-If SketchUp was not actually executed, report:
-
-```text
-RUBY_READY_NOT_EXECUTED
-```
-
-and do not claim the images/model were created.
-
-## 5. Mandatory material specification synthesis
-
-Before Excel export, AI-dg must synthesize technical/descriptive material properties from all linked drawing evidence, not only from BOM rows.
+Before Excel export, synthesize technical/descriptive material properties from all linked drawing evidence, not only BOM rows.
 
 Read and apply:
 
@@ -104,33 +65,19 @@ Mandatory output:
 OUTPUT/TAKEOFF/material-specifications.json
 ```
 
-This file must reconcile, when available:
-
-- material legend / note table;
-- leader notes;
-- sections;
-- details;
-- schedules/specifications;
-- verified CAD/SKP metadata.
-
 Known specification facts must survive even when quantity or thickness is incomplete.
 
-For example, if the drawing gives:
+Example:
 
 ```text
 MDF HOÀN THIỆN MELAMINE MÀU GHI SÁNG
+→ material/core = MDF
+→ finish = Melamine
+→ color = ghi sáng
+→ thickness = UNKNOWN unless separately proven
 ```
 
-then the material record must keep:
-
-```text
-core/material = MDF
-finish = Melamine
-color = ghi sáng
-thickness = UNKNOWN unless separately proven
-```
-
-If a glass detail gives:
+Example glass system:
 
 ```text
 KÍNH CƯỜNG LỰC DÀY 10MM
@@ -139,9 +86,26 @@ DÁN DECAL MỜ MÀU XANH NDTH
 KEO SILICONE
 ```
 
-all those facts must be preserved in `material-specifications.json` and exposed in Excel.
+All those facts must remain in `material-specifications.json`; the concise Excel should surface the useful user-facing subset without dumping provenance/debug fields.
 
-Do not reduce a rich drawing specification to generic `MDF` / `GLASS` labels.
+## 5. Material swatch/sample image
+
+When a PDF legend or note table contains a real material/color swatch and the runtime can crop it reliably, save the actual crop under:
+
+```text
+OUTPUT/IMAGES/MATERIALS/<material-id-or-code>.png
+```
+
+and record it in the material specification record as one of:
+
+```text
+sample_image
+sample_image_path
+legend_sample_image
+swatch_image
+```
+
+Do not create a fake swatch. If no reliable sample image can be extracted, keep the drawing color text only.
 
 ## 6. Mandatory Excel deliverables
 
@@ -152,121 +116,87 @@ OUTPUT/EXCEL/AI-dg_Tong-hop-vat-lieu.xlsx
 OUTPUT/EXCEL/AI-dg_Bao-gia.xlsx
 ```
 
-First run:
+Run:
 
 ```text
 scripts/workspace/export_project_excel.py <project-root>
 ```
 
-Then enrich the material workbook using:
+`scripts/workspace/enrich_material_excel.py` is retained only as a backward-compatible no-op for older automation. Do not use it to add technical sheets back into the normal workbook.
+
+### User-facing material workbook
+
+Normal workbook:
 
 ```text
-scripts/workspace/enrich_material_excel.py <project-root>
+AI-dg_Tong-hop-vat-lieu.xlsx
+└─ VAT_LIEU
 ```
 
-The enrichment step reads:
+Primary columns:
 
 ```text
-OUTPUT/TAKEOFF/material-specifications.json
+STT
+Hạng mục / Chi tiết
+Mã VL
+Vật liệu / Quy cách
+Dày (mm)
+Màu / Mẫu
+Khối lượng (m²)
+Tấm 1200×2400
+Ghi chú
 ```
 
-and must create/update:
+Rules:
+
+- No Ruby column.
+- No readiness/status column.
+- No source/evidence dump.
+- No internal region ID or geometry-role column.
+- `Mã VL` must be the drawing/spec code, not an AI-generated internal ID.
+- `Màu / Mẫu` uses color text and may embed a real extracted legend swatch.
+- `Khối lượng (m²)` must come from current takeoff evidence.
+- `Tấm 1200×2400` is an area-equivalent conversion using `ceil(m² / 2.88)`; it is not nesting optimization.
+- `Ghi chú` is short and fabrication-relevant only (for example edge treatment or silicone).
+
+### User-facing quotation workbook
+
+Normal workbook:
 
 ```text
-THONG_SO_VAT_LIEU
+AI-dg_Bao-gia.xlsx
+└─ BAO_GIA
 ```
 
-inside `AI-dg_Tong-hop-vat-lieu.xlsx`, while also adding synthesized drawing specifications to the existing `VAT_LIEU` sheet where a safe material match is possible.
-
-The workbooks must still be created when some downstream data is partial.
-
-Missing information is represented by explicit blank/status/UNKNOWN cells, not invented values.
-
-### Material workbook
-
-Required sheets:
+Primary columns:
 
 ```text
-TONG_QUAN
-HANG_MUC
-VAT_LIEU
-CHI_TIET_VAT_LIEU
-THONG_SO_VAT_LIEU
-NHA_CUNG_CAP
-REVIEW
-SOURCE
+STT
+Hạng mục / Chi tiết
+Mã VL
+Vật liệu / Quy cách
+Dày (mm)
+Màu / Mẫu
+KL (m²)
+Tấm 1200×2400
+ĐVT
+Đơn giá
+Thành tiền
 ```
 
-`THONG_SO_VAT_LIEU` must expose drawing-backed properties such as:
+Do not clutter the main quotation sheet with supplier URLs, verification flags, source text or Review Queue data.
 
-```text
-Hạng mục
-Material ID
-Vật liệu / hệ vật liệu
-Vai trò
-Region / Part / Layer
-Core
-Finish
-Color
-Thickness
-Glass type
-Decal / film
-Edge treatment
-Adhesive / sealant
-Synthesized specification
-Status
-Source
-```
+Never invent prices. If no verified price exists, leave `Đơn giá` blank.
 
-`HANG_MUC` should embed the SketchUp preview image when `OUTPUT/IMAGES` contains a matching item image. If no image exists yet, the workbook must say that Ruby needs to be run/exported; it must not invent a picture.
-
-### Quotation workbook
-
-Required sheets:
-
-```text
-BAO_GIA
-DON_GIA_NGUON
-REVIEW
-```
-
-Never invent prices. If no verified price exists, leave unit price blank and set status such as:
-
-```text
-CHUA_CO_DON_GIA
-SUPPLIER_NOT_VERIFIED
-```
-
-The workbook may contain formulas for totals but only over real supplied/verified quantity and price cells.
-
-## 7. Supplier data
-
-When web access or a user supplier library is available, create:
+Supplier/source research remains in:
 
 ```text
 OUTPUT/TAKEOFF/suppliers.json
 ```
 
-Each supplier record should retain:
+or a separate technical/procurement report when requested.
 
-```text
-material_code / material_name
-supplier_name
-brand
-product_code
-spec
-unit_price_vnd (when verified)
-unit
-area/location
-website
-checked_date
-source_url
-verification_status
-```
-
-If no supplier research was actually performed, keep `SUPPLIER_NOT_VERIFIED` rather than fabricating companies or prices.
-
-## 8. Recommended run order
+## 7. Recommended run order
 
 ```text
 prepare_run
@@ -276,26 +206,24 @@ prepare_run
 → Geometry Ledger
 → Material Spatial Map
 → Material Specification Synthesis
+→ optional real legend-swatch crop extraction
 → write material-specifications.json
 → Readiness Matrix
 → write TAKEOFF JSON
 → generate Ruby for every READY/PARTIAL_READY component
 → run/test Ruby in SketchUp when execution is available
-→ export preview images when Ruby runs
-→ export both Excel workbooks
-→ enrich material Excel from material-specifications.json
+→ export both concise Excel workbooks
 → write reports
 → finalize_output
 ```
 
-## 9. Completion gate
+## 8. Completion gate
 
 A normal local project run is not considered complete if:
 
 - a modelable item has no `OUTPUT/RUBY/*.rb`;
 - `material-specifications.json` is missing when material legends/notes/details are present;
-- known legend/detail material properties disappear from Excel;
-- `THONG_SO_VAT_LIEU` is missing from the material workbook;
+- known material code/name/thickness/color facts disappear from the user-facing material table;
 - neither Excel workbook was attempted;
 - old OUTPUT from a previous run was reused;
 - a price/supplier/image/model is claimed but was not actually created or verified.
