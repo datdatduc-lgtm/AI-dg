@@ -30,10 +30,12 @@ jobs:
           test -f .agents/skills/ai-dg-estimator/SKILL.md
           test -f .agents/skills/ai-dg-estimator/references/workspace-io.md
           test -f .agents/skills/ai-dg-estimator/references/project-deliverables.md
+          test -f .agents/skills/ai-dg-estimator/references/material-specification-synthesis.md
           test -f .agents/skills/ai-dg-estimator/scripts/workspace/init_project.py
           test -f .agents/skills/ai-dg-estimator/scripts/workspace/prepare_run.py
           test -f .agents/skills/ai-dg-estimator/scripts/workspace/scan_input.py
           test -f .agents/skills/ai-dg-estimator/scripts/workspace/export_project_excel.py
+          test -f .agents/skills/ai-dg-estimator/scripts/workspace/enrich_material_excel.py
           test -f .agents/skills/ai-dg-estimator/scripts/workspace/finalize_output.py
           test -f .agents/skills/ai-dg-estimator/scripts/sketchup/vn1_prototype.rb
           python - <<'PY'
@@ -42,7 +44,7 @@ jobs:
           assert text.startswith('---\n'), 'SKILL.md must start with YAML frontmatter'
           assert '\nname: ai-dg-estimator\n' in text, 'skill name missing'
           assert '\ndescription:' in text, 'skill description missing'
-          assert 'version: "0.3.1-alpha"' in text, 'unexpected skill version'
+          assert 'version: "0.3.2-alpha"' in text, 'unexpected skill version'
           print('Basic SKILL.md validation passed')
           PY
 
@@ -79,14 +81,38 @@ jobs:
           cat > /tmp/ai-dg-demo/OUTPUT/TAKEOFF/material-regions.json <<'JSON'
           {"material_regions":[{"item_code":"TEST-01","region":"body","material_code":"MDF-TEST","material_role":"PANEL","dimensions":{"x_mm":1000,"z_mm":500},"status":"PARTIAL_READY","source":{"file":"example.pdf","page":1}}]}
           JSON
+          cat > /tmp/ai-dg-demo/OUTPUT/TAKEOFF/material-specifications.json <<'JSON'
+          {"materials":[
+            {"item_code":"TEST-01","material_id":"MDF-TEST","material_family":"MDF","material_name":"MDF hoàn thiện Melamine màu ghi sáng","role":"CORE/PANEL + SURFACE_FINISH","host_region":"body","core":"MDF","finish":"Melamine","color":"ghi sáng","thickness_mm":18,"spec_text":"MDF hoàn thiện Melamine màu ghi sáng","status":"EXPLICIT","sources":[{"file":"example.pdf","page":1,"view":"legend"}]},
+            {"item_code":"TEST-01","material_id":"GLASS-TEST","material_family":"GLASS","material_name":"Kính cường lực dày 10mm dán decal mờ màu xanh NDTH","role":"GLASS + FILM_DECAL","host_region":"upper","glass_type":"kính cường lực","thickness_mm":10,"film_decal":"decal mờ màu xanh NDTH","edge_treatment":"mài xiết cạnh 1 mm","adhesive_sealant":"silicone","status":"EXPLICIT","sources":[{"file":"example.pdf","page":1,"view":"detail"}]}
+          ]}
+          JSON
           cat > /tmp/ai-dg-demo/OUTPUT/TAKEOFF/bom.json <<'JSON'
-          {"bom":[{"material_code":"MDF-TEST","thickness_mm":18,"net_area_m2":0.5,"required_area_m2":0.5,"net_volume_m3":0.009,"sheet_length_mm":2440,"sheet_width_mm":1220,"theoretical_sheet_count":1,"item_ids":["TEST-01"]}],"review":[]}
+          {"bom":[{"material_code":"MDF-TEST","material_name":"MDF hoàn thiện Melamine màu ghi sáng","thickness_mm":18,"net_area_m2":0.5,"required_area_m2":0.5,"net_volume_m3":0.009,"sheet_length_mm":2440,"sheet_width_mm":1220,"theoretical_sheet_count":1,"item_ids":["TEST-01"]}],"review":[]}
           JSON
           echo '# Ruby test artifact' > /tmp/ai-dg-demo/OUTPUT/RUBY/TEST-01.rb
 
           python .agents/skills/ai-dg-estimator/scripts/workspace/export_project_excel.py /tmp/ai-dg-demo
+          python .agents/skills/ai-dg-estimator/scripts/workspace/enrich_material_excel.py /tmp/ai-dg-demo
           test -f /tmp/ai-dg-demo/OUTPUT/EXCEL/AI-dg_Tong-hop-vat-lieu.xlsx
           test -f /tmp/ai-dg-demo/OUTPUT/EXCEL/AI-dg_Bao-gia.xlsx
+
+          python - <<'PY'
+          from openpyxl import load_workbook
+          p='/tmp/ai-dg-demo/OUTPUT/EXCEL/AI-dg_Tong-hop-vat-lieu.xlsx'
+          wb=load_workbook(p, read_only=True)
+          assert 'THONG_SO_VAT_LIEU' in wb.sheetnames
+          ws=wb['THONG_SO_VAT_LIEU']
+          values='\n'.join(str(c.value or '') for row in ws.iter_rows() for c in row)
+          assert 'Melamine' in values
+          assert 'ghi sáng' in values
+          assert 'kính cường lực' in values
+          assert '10' in values
+          assert 'decal mờ màu xanh NDTH' in values
+          assert 'mài xiết cạnh 1 mm' in values
+          assert 'silicone' in values
+          print('Material specification Excel enrichment passed')
+          PY
 
           echo "# CI output" > /tmp/ai-dg-demo/OUTPUT/REPORTS/analysis.md
           python .agents/skills/ai-dg-estimator/scripts/workspace/finalize_output.py /tmp/ai-dg-demo --status PASS
@@ -98,17 +124,17 @@ jobs:
 
       - name: Inspect ZIP root
         run: |
-          unzip -l dist/AI-dg-Work-v0.3.1-alpha.zip
-          unzip -p dist/AI-dg-Work-v0.3.1-alpha.zip SKILL.md | head -n 16
-          cat dist/AI-dg-Work-v0.3.1-alpha.sha256
+          unzip -l dist/AI-dg-Work-v0.3.2-alpha.zip
+          unzip -p dist/AI-dg-Work-v0.3.2-alpha.zip SKILL.md | head -n 16
+          cat dist/AI-dg-Work-v0.3.2-alpha.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AI-dg-Work-v0.3.1-alpha
+          name: AI-dg-Work-v0.3.2-alpha
           path: |
-            dist/AI-dg-Work-v0.3.1-alpha.zip
-            dist/AI-dg-Work-v0.3.1-alpha.sha256
-            dist/AI-dg-Work-v0.3.1-alpha-contents.txt
+            dist/AI-dg-Work-v0.3.2-alpha.zip
+            dist/AI-dg-Work-v0.3.2-alpha.sha256
+            dist/AI-dg-Work-v0.3.2-alpha-contents.txt
             dist/ai-dg-estimator.zip
           if-no-files-found: error
