@@ -44,7 +44,8 @@ jobs:
           assert text.startswith('---\n'), 'SKILL.md must start with YAML frontmatter'
           assert '\nname: ai-dg-estimator\n' in text, 'skill name missing'
           assert '\ndescription:' in text, 'skill description missing'
-          assert 'version: "0.3.2-alpha"' in text, 'unexpected skill version'
+          assert 'version: "0.3.3-alpha"' in text, 'unexpected skill version'
+          assert 'stage: "concise-excel-material-swatch"' in text, 'unexpected skill stage'
           print('Basic SKILL.md validation passed')
           PY
 
@@ -54,7 +55,7 @@ jobs:
       - name: Install Excel test dependencies
         run: python -m pip install 'openpyxl>=3.1,<4' 'Pillow>=10,<12'
 
-      - name: Smoke test fresh-run workspace and deliverables
+      - name: Smoke test fresh-run workspace and concise Excel deliverables
         run: |
           python .agents/skills/ai-dg-estimator/scripts/workspace/init_project.py /tmp/ai-dg-demo --name "CI Demo"
           echo "source-current" > /tmp/ai-dg-demo/INPUT/OTHER/example.txt
@@ -76,19 +77,16 @@ jobs:
           {"items":[{"item_code":"TEST-01","item_name":"Test item","component_geometry_readiness":"PARTIAL_READY","envelope":{"x_mm":1000,"y_mm":40,"z_mm":500}}]}
           JSON
           cat > /tmp/ai-dg-demo/OUTPUT/TAKEOFF/items.json <<'JSON'
-          {"items":[{"id":"TEST-01","item_code":"TEST-01","item_name":"Test item","material_code":"MDF-TEST","length_mm":1000,"width_mm":500,"thickness_mm":18,"quantity":1,"confidence":1.0,"review_required":false,"source":{"pdf":"example.pdf","page":1,"evidence":"CI"}}]}
-          JSON
-          cat > /tmp/ai-dg-demo/OUTPUT/TAKEOFF/material-regions.json <<'JSON'
-          {"material_regions":[{"item_code":"TEST-01","region":"body","material_code":"MDF-TEST","material_role":"PANEL","dimensions":{"x_mm":1000,"z_mm":500},"status":"PARTIAL_READY","source":{"file":"example.pdf","page":1}}]}
+          {"items":[{"id":"TEST-01","item_code":"TEST-01","item_name":"Test item","quantity":1,"confidence":1.0,"review_required":false,"source":{"pdf":"example.pdf","page":1,"evidence":"CI"}}]}
           JSON
           cat > /tmp/ai-dg-demo/OUTPUT/TAKEOFF/material-specifications.json <<'JSON'
           {"materials":[
-            {"item_code":"TEST-01","material_id":"MDF-TEST","material_family":"MDF","material_name":"MDF hoàn thiện Melamine màu ghi sáng","role":"CORE/PANEL + SURFACE_FINISH","host_region":"body","core":"MDF","finish":"Melamine","color":"ghi sáng","thickness_mm":18,"spec_text":"MDF hoàn thiện Melamine màu ghi sáng","status":"EXPLICIT","sources":[{"file":"example.pdf","page":1,"view":"legend"}]},
-            {"item_code":"TEST-01","material_id":"GLASS-TEST","material_family":"GLASS","material_name":"Kính cường lực dày 10mm dán decal mờ màu xanh NDTH","role":"GLASS + FILM_DECAL","host_region":"upper","glass_type":"kính cường lực","thickness_mm":10,"film_decal":"decal mờ màu xanh NDTH","edge_treatment":"mài xiết cạnh 1 mm","adhesive_sealant":"silicone","status":"EXPLICIT","sources":[{"file":"example.pdf","page":1,"view":"detail"}]}
+            {"item_code":"TEST-01","material_id":"INTERNAL-MDF-1","source_material_code":"WD-03","material_family":"MDF","material_name":"MDF hoàn thiện Melamine","host_region":"thân dưới","core":"MDF","finish":"Melamine","color":"ghi sáng","thickness_mm":18,"area_m2":0.5,"spec_text":"MDF hoàn thiện Melamine màu ghi sáng","status":"EXPLICIT"},
+            {"item_code":"TEST-01","material_id":"INTERNAL-GLASS-1","material_family":"GLASS","material_name":"Kính cường lực + decal mờ","host_region":"kính trên","glass_type":"kính cường lực","thickness_mm":10,"color":"xanh NDTH","film_decal":"decal mờ màu xanh NDTH","edge_treatment":"mài xiết cạnh 1 mm","adhesive_sealant":"silicone","area_m2":0.25,"status":"EXPLICIT"}
           ]}
           JSON
           cat > /tmp/ai-dg-demo/OUTPUT/TAKEOFF/bom.json <<'JSON'
-          {"bom":[{"material_code":"MDF-TEST","material_name":"MDF hoàn thiện Melamine màu ghi sáng","thickness_mm":18,"net_area_m2":0.5,"required_area_m2":0.5,"net_volume_m3":0.009,"sheet_length_mm":2440,"sheet_width_mm":1220,"theoretical_sheet_count":1,"item_ids":["TEST-01"]}],"review":[]}
+          {"bom":[{"material_code":"WD-03","material_name":"MDF hoàn thiện Melamine","thickness_mm":18,"net_area_m2":0.5,"required_area_m2":0.5,"item_ids":["TEST-01"]}],"review":[]}
           JSON
           echo '# Ruby test artifact' > /tmp/ai-dg-demo/OUTPUT/RUBY/TEST-01.rb
 
@@ -99,19 +97,34 @@ jobs:
 
           python - <<'PY'
           from openpyxl import load_workbook
-          p='/tmp/ai-dg-demo/OUTPUT/EXCEL/AI-dg_Tong-hop-vat-lieu.xlsx'
-          wb=load_workbook(p, read_only=True)
-          assert 'THONG_SO_VAT_LIEU' in wb.sheetnames
-          ws=wb['THONG_SO_VAT_LIEU']
-          values='\n'.join(str(c.value or '') for row in ws.iter_rows() for c in row)
+
+          material='/tmp/ai-dg-demo/OUTPUT/EXCEL/AI-dg_Tong-hop-vat-lieu.xlsx'
+          quote='/tmp/ai-dg-demo/OUTPUT/EXCEL/AI-dg_Bao-gia.xlsx'
+
+          mwb=load_workbook(material, data_only=False)
+          qwb=load_workbook(quote, data_only=False)
+          assert mwb.sheetnames == ['VAT_LIEU'], mwb.sheetnames
+          assert qwb.sheetnames == ['BAO_GIA'], qwb.sheetnames
+
+          mws=mwb['VAT_LIEU']
+          headers=[mws.cell(4,c).value for c in range(1,10)]
+          assert headers == ['STT','Hạng mục / Chi tiết','Mã VL','Vật liệu / Quy cách','Dày (mm)','Màu / Mẫu','Khối lượng (m²)','Tấm 1200×2400','Ghi chú']
+          values='\n'.join(str(c.value or '') for row in mws.iter_rows() for c in row)
+          assert 'WD-03' in values
+          assert 'INTERNAL-MDF-1' not in values
           assert 'Melamine' in values
           assert 'ghi sáng' in values
-          assert 'kính cường lực' in values
-          assert '10' in values
-          assert 'decal mờ màu xanh NDTH' in values
+          assert 'Kính cường lực + decal mờ' in values
+          assert 'xanh NDTH' in values
           assert 'mài xiết cạnh 1 mm' in values
           assert 'silicone' in values
-          print('Material specification Excel enrichment passed')
+          for forbidden in ('Ruby','Readiness','DERIVED_FROM_VIEWS','Geometry role','Source URL'):
+              assert forbidden not in values, forbidden
+          assert mws['G5'].value == 0.5
+          assert mws['H5'].value == 1
+          assert mws['G6'].value == 0.25
+          assert mws['H6'].value == 1
+          print('Concise Excel contract passed')
           PY
 
           echo "# CI output" > /tmp/ai-dg-demo/OUTPUT/REPORTS/analysis.md
@@ -124,17 +137,17 @@ jobs:
 
       - name: Inspect ZIP root
         run: |
-          unzip -l dist/AI-dg-Work-v0.3.2-alpha.zip
-          unzip -p dist/AI-dg-Work-v0.3.2-alpha.zip SKILL.md | head -n 16
-          cat dist/AI-dg-Work-v0.3.2-alpha.sha256
+          unzip -l dist/AI-dg-Work-v0.3.3-alpha.zip
+          unzip -p dist/AI-dg-Work-v0.3.3-alpha.zip SKILL.md | head -n 16
+          cat dist/AI-dg-Work-v0.3.3-alpha.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AI-dg-Work-v0.3.2-alpha
+          name: AI-dg-Work-v0.3.3-alpha
           path: |
-            dist/AI-dg-Work-v0.3.2-alpha.zip
-            dist/AI-dg-Work-v0.3.2-alpha.sha256
-            dist/AI-dg-Work-v0.3.2-alpha-contents.txt
+            dist/AI-dg-Work-v0.3.3-alpha.zip
+            dist/AI-dg-Work-v0.3.3-alpha.sha256
+            dist/AI-dg-Work-v0.3.3-alpha-contents.txt
             dist/ai-dg-estimator.zip
           if-no-files-found: error
