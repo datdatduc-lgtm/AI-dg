@@ -18,6 +18,7 @@ D:\AI-dg\Villa-A\
 ├─ INPUT\OTHER\
 ├─ WORK\...
 ├─ OUTPUT\RUBY\
+├─ OUTPUT\IMAGES\
 ├─ OUTPUT\TAKEOFF\
 ├─ OUTPUT\EXCEL\
 ├─ OUTPUT\REPORTS\
@@ -38,38 +39,62 @@ INPUT/SKP/noi-that.skp
 INPUT/OTHER/material-schedule.xlsx
 ```
 
-AI-dg never modifies the original INPUT files.
+AI-dg never modifies or deletes original INPUT files.
 
-## 3. Ask Codex to analyze the folder
+## 3. Every deployment starts fresh
+
+Before each new analysis/deployment, AI-dg must run:
+
+```powershell
+python "$env:USERPROFILE\.agents\skills\ai-dg-estimator\scripts\workspace\prepare_run.py" "D:\AI-dg\Villa-A"
+```
+
+This command automatically:
+
+```text
+PRESERVE  INPUT/
+PRESERVE  project.ai-dg.json
+DELETE    previous WORK/
+DELETE    previous OUTPUT/
+RECREATE  fresh WORK/OUTPUT folders
+RESCAN    current INPUT/
+CREATE    fresh WORK/manifests/input-manifest.json
+```
+
+Old Ruby, JSON, Excel, images, reports, models and review data are not allowed to survive into the next run.
+
+Do not store manually maintained files in `OUTPUT/`. If a file must survive reruns, keep it in INPUT/OTHER or elsewhere outside WORK/OUTPUT.
+
+## 4. Ask Codex to analyze the folder
 
 Example:
 
 ```text
 Dùng skill ai-dg-estimator phân tích project tại D:\AI-dg\Villa-A.
-Đọc toàn bộ INPUT, tạo input manifest, đối chiếu PDF/CAD/SKP, dựng Geometry Ledger,
+Bắt đầu bằng fresh-run cleanup bắt buộc: xóa WORK/OUTPUT cũ nhưng giữ nguyên INPUT.
+Sau đó đọc toàn bộ INPUT, đối chiếu PDF/CAD/SKP, dựng Geometry Ledger,
 map vật liệu, bóc các phần đủ bằng chứng, tạo Ruby prototype cho các component đủ readiness,
-và ghi toàn bộ kết quả vào OUTPUT. Không yêu cầu tôi upload lại các file vào chat.
+và ghi toàn bộ kết quả mới vào OUTPUT. Không yêu cầu tôi upload lại file vào chat.
 ```
 
-Codex should run the input scanner first:
+Codex should use `prepare_run.py` as the deployment entry point. `scan_input.py` alone is for inventory only and does not replace fresh-run cleanup.
 
-```powershell
-python "$env:USERPROFILE\.agents\skills\ai-dg-estimator\scripts\workspace\scan_input.py" "D:\AI-dg\Villa-A"
-```
-
-## 4. Expected OUTPUT
+## 5. Expected OUTPUT
 
 ```text
 OUTPUT/
 ├─ RUBY/
 │  └─ *.rb
+├─ IMAGES/
+│  └─ *.png
 ├─ TAKEOFF/
 │  ├─ items.json
 │  ├─ material-regions.json
 │  ├─ bom.json
 │  └─ review-queue.json
 ├─ EXCEL/
-│  └─ AI-dg-estimate.xlsx
+│  ├─ AI-dg_Tong-hop-vat-lieu.xlsx
+│  └─ AI-dg_Bao-gia.xlsx
 ├─ REPORTS/
 │  ├─ analysis.md
 │  ├─ drawing-index.md
@@ -83,10 +108,10 @@ OUTPUT/
 
 Partial outputs are allowed. A blocked fabrication BOM must not prevent AI-dg from producing a valid geometry report or a review-tagged Ruby prototype.
 
-## 5. Finalize output manifest
+## 6. Finalize output manifest
 
 ```powershell
 python "$env:USERPROFILE\.agents\skills\ai-dg-estimator\scripts\workspace\finalize_output.py" "D:\AI-dg\Villa-A" --status PARTIAL
 ```
 
-Use `PASS`, `PARTIAL`, or `FAIL` for the overall run status.
+Use `PASS`, `PARTIAL`, or `FAIL` for the current run status.
