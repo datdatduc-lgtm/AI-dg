@@ -28,35 +28,49 @@ jobs:
       - name: Validate skill root
         run: |
           test -f .agents/skills/ai-dg-estimator/SKILL.md
+          test -f .agents/skills/ai-dg-estimator/references/workspace-io.md
+          test -f .agents/skills/ai-dg-estimator/scripts/workspace/init_project.py
+          test -f .agents/skills/ai-dg-estimator/scripts/workspace/scan_input.py
+          test -f .agents/skills/ai-dg-estimator/scripts/workspace/finalize_output.py
           python - <<'PY'
           from pathlib import Path
           text = Path('.agents/skills/ai-dg-estimator/SKILL.md').read_text(encoding='utf-8')
           assert text.startswith('---\n'), 'SKILL.md must start with YAML frontmatter'
           assert '\nname: ai-dg-estimator\n' in text, 'skill name missing'
           assert '\ndescription:' in text, 'skill description missing'
-          assert 'version: "0.2.2-alpha"' in text, 'unexpected skill version'
+          assert 'version: "0.3.0-alpha"' in text, 'unexpected skill version'
           print('Basic SKILL.md validation passed')
           PY
 
       - name: Run dependency-light compatibility smoke test
         run: python .agents/skills/ai-dg-estimator/scripts/smoke_test.py
 
+      - name: Smoke test workspace helpers
+        run: |
+          python .agents/skills/ai-dg-estimator/scripts/workspace/init_project.py /tmp/ai-dg-demo --name "CI Demo"
+          touch /tmp/ai-dg-demo/INPUT/OTHER/example.txt
+          python .agents/skills/ai-dg-estimator/scripts/workspace/scan_input.py /tmp/ai-dg-demo
+          echo "# CI output" > /tmp/ai-dg-demo/OUTPUT/REPORTS/analysis.md
+          python .agents/skills/ai-dg-estimator/scripts/workspace/finalize_output.py /tmp/ai-dg-demo --status PARTIAL
+          test -f /tmp/ai-dg-demo/WORK/manifests/input-manifest.json
+          test -f /tmp/ai-dg-demo/OUTPUT/output-manifest.json
+
       - name: Build ChatGPT Work upload package
         run: python package_chatgpt.py
 
       - name: Inspect ZIP root
         run: |
-          unzip -l dist/AI-dg-Work-v0.2.2-alpha.zip
-          unzip -p dist/AI-dg-Work-v0.2.2-alpha.zip SKILL.md | head -n 16
-          cat dist/AI-dg-Work-v0.2.2-alpha.sha256
+          unzip -l dist/AI-dg-Work-v0.3.0-alpha.zip
+          unzip -p dist/AI-dg-Work-v0.3.0-alpha.zip SKILL.md | head -n 16
+          cat dist/AI-dg-Work-v0.3.0-alpha.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AI-dg-Work-v0.2.2-alpha
+          name: AI-dg-Work-v0.3.0-alpha
           path: |
-            dist/AI-dg-Work-v0.2.2-alpha.zip
-            dist/AI-dg-Work-v0.2.2-alpha.sha256
-            dist/AI-dg-Work-v0.2.2-alpha-contents.txt
+            dist/AI-dg-Work-v0.3.0-alpha.zip
+            dist/AI-dg-Work-v0.3.0-alpha.sha256
+            dist/AI-dg-Work-v0.3.0-alpha-contents.txt
             dist/ai-dg-estimator.zip
           if-no-files-found: error
