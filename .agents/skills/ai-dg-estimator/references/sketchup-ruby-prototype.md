@@ -73,44 +73,115 @@ A Ruby prototype may create geometry with these statuses:
 
 Do not convert `AMBIGUOUS` or `UNKNOWN` facts into fabrication solids without marking them as review/guide geometry.
 
-## 5. VN-1 prototype strategy
+## 5. Projection visibility rule
 
-For the VN-1 acceptance drawing, the current geometry-first read supports the following local model test:
+A dimensional refinement seen in section/detail does **not** automatically create a visible edge in another projection.
+
+Before generating a separate Ruby solid/band for a subregion, ask:
 
 ```text
-X = 8000 mm
-Z = 1100 mm
-lower region = 800 mm
-  ├─ lower subregion = 750 mm
-  └─ transition subregion = 50 mm
-upper visible glass region = 300 mm
+Does this boundary appear in the target projection?
+```
+
+If a section exposes a recess, groove, embed depth, hidden joint or internal layer inside an otherwise continuous elevation silhouette, the Ruby model must preserve the continuous outer face and place the refined geometry internally.
+
+Wrong pattern:
+
+```text
+front elevation says lower region = 800
+section says 750 + 50 = 800
+→ create two visible stacked solids 750 and 50
+```
+
+Correct reasoning can instead be:
+
+```text
+front silhouette remains continuous to 800
+section reveals a 50-deep hidden feature inside that 800 region
+→ create one continuous outer body + internal recess/embed geometry
+```
+
+A new visible seam is allowed only when the elevation/plan/side/detail evidence actually establishes that boundary on the visible surface.
+
+This visibility test is mandatory during projection-back validation.
+
+## 6. VN-1 corrected prototype strategy
+
+For the VN-1 acceptance drawing, the linked views support this corrected local hypothesis:
+
+```text
+X length = 8000 mm
+overall Z = 1100 mm
+lower visible body = 800 mm
+upper exposed glass = 300 mm
+section refinement = 750 + 50 = 800
+CT1 overall Y = 14 + 12 + 14 = 40 mm
 glass thickness = 10 mm
-local CT1 depth stack = 14 + 12 + 14 = 40 mm
 top corner radius = R50
 ```
 
-The relationship `750 + 50 = 800` is a `DIMENSION_REFINEMENT`.
+The crucial interpretation is:
 
-The Ruby prototype may use the 40 mm CT1 stack as a **review-required local depth hypothesis** if the side/detail views support the same span. It must not claim that this proves the complete lower-body fabrication build-up.
+```text
+50 mm = glass slot/embed depth inside the 800 mm body
+```
 
-The central 12 mm CT1 zone may be visualized as a guide/seat zone. If the drawing image clearly constrains the 10 mm glass inside that 12 mm zone, the glass position may be modeled as `DERIVED_FROM_VIEWS`; otherwise keep the Y offset review-required.
+not:
 
-## 6. Prototype object hierarchy
+```text
+50 mm = separate visible horizontal transition band
+```
 
-Prefer a clean hierarchy such as:
+Therefore the prototype should model:
+
+```text
+LOWER BODY
+- continuous visible height: 800
+- overall local thickness: 40
+- central top slot: 12 wide × 50 deep
+
+GLASS
+- thickness: 10
+- embedded depth: 50
+- exposed height above body: 300
+- total modeled glass height: 350
+- R50 top corners
+```
+
+The 12 mm central slot is symmetric between two 14 mm side zones. A centered 10 mm glass leaves 1 mm on each side. Because the drawing indicates silicone at this joint, that 1 + 10 + 1 arrangement is a useful `DERIVED_FROM_VIEWS` / review hypothesis, but exact silicone bead geometry should not be treated as fabrication-ready unless explicitly detailed.
+
+This corrected geometry should satisfy all three checks:
+
+```text
+front: no false horizontal seam at Z=750
+side: 40 mm body with 10 mm centered glass
+CT1: 14 / 12 / 14 stack with a 50 mm deep glass seat
+```
+
+## 7. Prefer profile extrusion for internal slots
+
+When a long item has a constant cross-section, prefer generating one cross-section profile and extruding it along the long axis instead of stacking many overlapping boxes.
+
+For VN-1, a Y/Z profile with the 12 × 50 top notch can be extruded along X=8000. This has two advantages:
+
+- the external 800 mm face remains continuous, avoiding a false Z=750 seam;
+- the side/section geometry is encoded directly in the solid profile.
+
+Use separate solids only when they represent genuinely separate physical parts or when the source drawing requires separate material/assembly tracking.
+
+## 8. Prototype object hierarchy
+
+Prefer semantic names based on physical meaning, for example:
 
 ```text
 AI-DG_TEST_VN-1
-├─ LOWER_BODY_ENVELOPE
-├─ TRANSITION_LEFT_LAYER
-├─ TRANSITION_RIGHT_LAYER
-├─ CT1_SEAT_ZONE_GUIDE
-└─ UPPER_GLASS
+├─ LOWER_BODY_WITH_GLASS_SLOT
+└─ GLASS_10MM_EMBED_50_EXPOSED_300
 ```
 
-Names are semantic and should match the Geometry Ledger. Do not use anonymous groups.
+Do not create a separate `TRANSITION_50` child merely because a section dimension chain contains 50. The name and solid structure must reflect the reconstructed physical role.
 
-## 7. Preserve provenance inside SketchUp
+## 9. Preserve provenance inside SketchUp
 
 Use SketchUp AttributeDictionary data on the root and important child groups.
 
@@ -128,9 +199,19 @@ review_required
 notes
 ```
 
+For hidden/refined geometry also preserve useful semantic fields such as:
+
+```text
+slot_width_mm
+slot_depth_mm
+glass_embedded_height_mm
+glass_exposed_height_mm
+projection_back_status
+```
+
 This makes the generated model auditable and prepares the future plugin architecture.
 
-## 8. Never require project placement for a local prototype
+## 10. Never require project placement for a local prototype
 
 A component can be reconstructed at local origin `(0,0,0)` even when project anchor/rotation/quantity are unknown.
 
@@ -142,18 +223,21 @@ Project Placement: BLOCKED / UNKNOWN
 Project Quantity: BLOCKED / UNKNOWN
 ```
 
-## 9. Projection-back gate for Ruby
+## 11. Projection-back gate for Ruby
 
 After generating the local component, compare its dimensions/projections against the Geometry Ledger:
 
 - front projection;
 - side projection;
 - relevant section/detail;
-- material region boundaries.
+- material region boundaries;
+- visible vs hidden boundaries.
 
 The Ruby prototype passes only if the generated geometry explains the same linked views within the evidence actually available.
 
-## 10. Prototype before plugin
+A visible line that does not exist in the authored elevation is a reconstruction failure even if every individual numeric dimension used by the Ruby code is arithmetically correct.
+
+## 12. Prototype before plugin
 
 Development order:
 
@@ -162,7 +246,7 @@ single drawing
 → Geometry Ledger
 → one standalone .rb prototype
 → load in SketchUp Ruby Console
-→ inspect geometry
+→ inspect front / side / section / detail projections
 → fix reconstruction rules
 → repeat on several drawing types
 → extract reusable Ruby helpers
