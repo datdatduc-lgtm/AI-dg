@@ -1,7 +1,7 @@
 [project]
 name = "ai-dg-estimator"
-version = "0.3.0a0"
-description = "AI-dg workspace-first drawing understanding, orthographic reconstruction, reconciliation and deterministic takeoff helpers"
+version = "0.3.1a0"
+description = "AI-dg workspace-first drawing understanding, Ruby reconstruction, Excel deliverables and deterministic takeoff helpers"
 requires-python = ">=3.10"
 dependencies = []
 
@@ -9,6 +9,7 @@ dependencies = []
 runtime = [
   "PyMuPDF>=1.24,<2",
   "openpyxl>=3.1,<4",
+  "Pillow>=10,<12",
   "jsonschema>=4.23,<5"
 ]
 
