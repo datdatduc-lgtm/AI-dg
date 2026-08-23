@@ -1,10 +1,10 @@
 # AI-dg
 
-AI-dg is a portable Agent Skill for interior/joinery/CNC drawing understanding, PDF↔CAD↔SketchUp reconciliation, orthographic 3D reconstruction, material mapping, quantity takeoff, mandatory standalone SketchUp Ruby reconstruction and Excel material/quotation deliverables.
+AI-dg is a portable Agent Skill for interior/joinery/CNC drawing understanding, PDF↔CAD↔SketchUp reconciliation, orthographic 3D reconstruction, material mapping, quantity takeoff, standalone SketchUp Ruby reconstruction and concise Excel material/quotation deliverables.
 
 ## Current stage
 
-**V0.3.1-alpha — workspace + mandatory Ruby + Excel deliverables**
+**V0.3.3-alpha — concise Excel + material swatch support**
 
 The local/Codex workflow is filesystem-first:
 
@@ -23,13 +23,13 @@ PDF/CAD/SKP reconciliation
           ↓
 Geometry Ledger + Material Spatial Map
           ↓
+Material Specification Synthesis
+          ↓
 TAKEOFF JSON
           ↓
 Ruby for every READY/PARTIAL_READY component
           ↓
-SketchUp preview images when Ruby is executed
-          ↓
-2 Excel workbooks
+2 concise Excel workbooks
           ↓
 Reports + output-manifest.json
 ```
@@ -57,6 +57,7 @@ AI-dg-PROJECT/
 └─ OUTPUT/
    ├─ RUBY/
    ├─ IMAGES/
+   │  └─ MATERIALS/   # optional real legend/material swatches
    ├─ TAKEOFF/
    ├─ EXCEL/
    ├─ REPORTS/
@@ -69,6 +70,12 @@ For each modelable item:
 
 ```text
 OUTPUT/RUBY/<item>.rb
+```
+
+Material synthesis:
+
+```text
+OUTPUT/TAKEOFF/material-specifications.json
 ```
 
 Excel exporter:
@@ -84,7 +91,25 @@ OUTPUT/EXCEL/AI-dg_Tong-hop-vat-lieu.xlsx
 OUTPUT/EXCEL/AI-dg_Bao-gia.xlsx
 ```
 
-The material workbook can embed actual SketchUp preview images from `OUTPUT/IMAGES`. Missing images, prices or suppliers remain explicit review/blank values; AI-dg must never invent them.
+The normal material workbook now has one concise user-facing sheet `VAT_LIEU` with:
+
+```text
+STT
+Hạng mục / Chi tiết
+Mã VL
+Vật liệu / Quy cách
+Dày (mm)
+Màu / Mẫu
+Khối lượng (m²)
+Tấm 1200×2400
+Ghi chú
+```
+
+Ruby paths, readiness, source/evidence dumps and internal AI metadata stay in JSON/reports rather than cluttering the user workbook.
+
+If the PDF legend contains a real material/color swatch and the runtime can crop it reliably, AI-dg may save it to `OUTPUT/IMAGES/MATERIALS/` and embed it in the `Màu / Mẫu` cell. It must not create a fake swatch.
+
+The 1200×2400 column is an area-equivalent conversion (`ceil(m² / 2.88)`), not nesting optimization.
 
 ## Fresh-run rule
 
@@ -100,7 +125,7 @@ This preserves `INPUT/`, deletes prior generated `WORK/` and `OUTPUT/`, recreate
 
 AI-dg links plan/elevation/side/section/detail as projections of the same physical item. It reconstructs local X/Y/Z geometry, maps materials spatially and performs projection-back checks before detailed takeoff or Ruby generation.
 
-A section refinement is not automatically a visible subdivision. For VN-1, the current corrected interpretation treats the section chain `750 + 50 = 800` as a hidden 50 mm glass embed/slot within the 800 mm lower body rather than a visible horizontal band.
+A section refinement is not automatically a visible subdivision. For VN-1, the corrected interpretation treats `750 + 50 = 800` as a hidden 50 mm glass embed/slot within the 800 mm lower body rather than a visible horizontal band.
 
 ## Ruby test
 
@@ -117,7 +142,7 @@ See [`RUBY_PROTOTYPE.md`](RUBY_PROTOTYPE.md).
 GitHub Actions builds:
 
 ```text
-AI-dg-Work-v0.3.1-alpha.zip
+AI-dg-Work-v0.3.3-alpha.zip
 ```
 
 See [`CHATGPT_WORK.md`](CHATGPT_WORK.md).
