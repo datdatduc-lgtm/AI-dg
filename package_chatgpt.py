@@ -29,6 +29,7 @@ REQUIRED_FILES = [
     "references/chatgpt-test-protocol.md",
     "references/sketchup-ruby-prototype.md",
     "scripts/workspace/init_project.py",
+    "scripts/workspace/prepare_run.py",
     "scripts/workspace/scan_input.py",
     "scripts/workspace/finalize_output.py",
     "scripts/smoke_test.py",
