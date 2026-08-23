@@ -1,16 +1,19 @@
 # AI-dg
 
-AI-dg is a portable Agent Skill for interior/joinery/CNC drawing understanding, PDF↔CAD↔SketchUp reconciliation, orthographic 3D reconstruction, material mapping, quantity takeoff, Excel export and standalone SketchUp Ruby prototyping.
+AI-dg is a portable Agent Skill for interior/joinery/CNC drawing understanding, PDF↔CAD↔SketchUp reconciliation, orthographic 3D reconstruction, material mapping, quantity takeoff, mandatory standalone SketchUp Ruby reconstruction and Excel material/quotation deliverables.
 
 ## Current stage
 
-**V0.3.0-alpha — workspace I/O + Ruby prototype**
+**V0.3.1-alpha — workspace + mandatory Ruby + Excel deliverables**
 
-The main local/Codex workflow is now filesystem-first:
+The local/Codex workflow is filesystem-first:
 
 ```text
 Project INPUT/
   PDF + CAD + optional SKP/specs
+          ↓
+prepare_run.py
+  clears old WORK/OUTPUT, keeps INPUT
           ↓
 input-manifest.json
           ↓
@@ -18,10 +21,17 @@ Geometry-first analysis
           ↓
 PDF/CAD/SKP reconciliation
           ↓
-readiness gates
+Geometry Ledger + Material Spatial Map
           ↓
-Project OUTPUT/
-  Ruby + Takeoff + Excel + Reports + Model
+TAKEOFF JSON
+          ↓
+Ruby for every READY/PARTIAL_READY component
+          ↓
+SketchUp preview images when Ruby is executed
+          ↓
+2 Excel workbooks
+          ↓
+Reports + output-manifest.json
 ```
 
 The GitHub `main` branch is the canonical source. The installable skill lives at:
@@ -44,75 +54,57 @@ AI-dg-PROJECT/
 │  ├─ SKP/
 │  └─ OTHER/
 ├─ WORK/
-├─ OUTPUT/
-│  ├─ RUBY/
-│  ├─ TAKEOFF/
-│  ├─ EXCEL/
-│  ├─ REPORTS/
-│  └─ MODEL/
-└─ project.ai-dg.json
+└─ OUTPUT/
+   ├─ RUBY/
+   ├─ IMAGES/
+   ├─ TAKEOFF/
+   ├─ EXCEL/
+   ├─ REPORTS/
+   └─ MODEL/
 ```
 
-Initialize:
+## Mandatory current-run outputs
+
+For each modelable item:
+
+```text
+OUTPUT/RUBY/<item>.rb
+```
+
+Excel exporter:
 
 ```powershell
-python "$env:USERPROFILE\.agents\skills\ai-dg-estimator\scripts\workspace\init_project.py" "D:\AI-dg\MyProject" --name "My Project"
+python "$env:USERPROFILE\.agents\skills\ai-dg-estimator\scripts\workspace\export_project_excel.py" "D:\AI-dg\MyProject"
 ```
 
-Then copy project files into `INPUT/` and tell Codex:
+creates:
 
 ```text
-Dùng skill ai-dg-estimator phân tích project tại D:\AI-dg\MyProject.
-Đọc toàn bộ INPUT và ghi kết quả vào OUTPUT. Không yêu cầu upload lại file vào chat.
+OUTPUT/EXCEL/AI-dg_Tong-hop-vat-lieu.xlsx
+OUTPUT/EXCEL/AI-dg_Bao-gia.xlsx
 ```
 
-AI-dg scans the source package into:
+The material workbook can embed actual SketchUp preview images from `OUTPUT/IMAGES`. Missing images, prices or suppliers remain explicit review/blank values; AI-dg must never invent them.
 
-```text
-WORK/manifests/input-manifest.json
+## Fresh-run rule
+
+Every new deployment must begin with:
+
+```powershell
+python "$env:USERPROFILE\.agents\skills\ai-dg-estimator\scripts\workspace\prepare_run.py" "D:\AI-dg\MyProject"
 ```
 
-and finalizes generated artifacts in:
-
-```text
-OUTPUT/output-manifest.json
-```
-
-## Expected outputs
-
-```text
-OUTPUT/RUBY/*.rb
-OUTPUT/TAKEOFF/items.json
-OUTPUT/TAKEOFF/material-regions.json
-OUTPUT/TAKEOFF/bom.json
-OUTPUT/TAKEOFF/review-queue.json
-OUTPUT/EXCEL/AI-dg-estimate.xlsx
-OUTPUT/REPORTS/analysis.md
-OUTPUT/REPORTS/drawing-index.md
-OUTPUT/REPORTS/geometry-ledger.md
-OUTPUT/REPORTS/source-reconciliation.md
-OUTPUT/REPORTS/readiness.md
-OUTPUT/MODEL/*.skp        # only when actually generated
-```
-
-Partial outputs are valid. For example, a component can be ready for a review-tagged Ruby prototype while project placement or fabrication BOM remains blocked.
+This preserves `INPUT/`, deletes prior generated `WORK/` and `OUTPUT/`, recreates them and rescans the current source package. Cross-run merging is forbidden.
 
 ## Geometry-first rule
 
-AI-dg must link plan/elevation/side/section/detail as projections of the same object, reconstruct local X/Y/Z geometry, map materials spatially and perform projection-back checks before detailed takeoff.
+AI-dg links plan/elevation/side/section/detail as projections of the same physical item. It reconstructs local X/Y/Z geometry, maps materials spatially and performs projection-back checks before detailed takeoff or Ruby generation.
 
-Example:
+A section refinement is not automatically a visible subdivision. For VN-1, the current corrected interpretation treats the section chain `750 + 50 = 800` as a hidden 50 mm glass embed/slot within the 800 mm lower body rather than a visible horizontal band.
 
-```text
-Elevation: 800 + 300 = 1100
-Section:   750 + 50 + 300 = 1100
-```
+## Ruby test
 
-If `750 + 50` subdivides the same lower `800` region, the relationship is `DIMENSION_REFINEMENT`, not a mismatch.
-
-## Ruby prototype
-
-Current standalone SketchUp test:
+Current standalone VN-1 test:
 
 ```text
 .agents/skills/ai-dg-estimator/scripts/sketchup/vn1_prototype.rb
@@ -125,26 +117,26 @@ See [`RUBY_PROTOTYPE.md`](RUBY_PROTOTYPE.md).
 GitHub Actions builds:
 
 ```text
-AI-dg-Work-v0.3.0-alpha.zip
+AI-dg-Work-v0.3.1-alpha.zip
 ```
 
 See [`CHATGPT_WORK.md`](CHATGPT_WORK.md).
 
 ## Runtime extras
 
-The skill core remains dependency-light. For deterministic PDF parsing, JSON Schema validation and Excel generation in local/Codex environments:
+For deterministic PDF, Excel with embedded images and full schema validation in local/Codex environments:
 
 ```bash
 python -m pip install -e ".[runtime]"
 ```
 
-Optional extras: PyMuPDF, openpyxl and jsonschema.
+Optional extras include PyMuPDF, openpyxl, Pillow and jsonschema.
 
 ## Accuracy rules
 
-- Never invent dimensions, materials, quantities, coordinates or source references.
+- Never invent dimensions, materials, quantities, coordinates, suppliers, prices or source references.
 - Never modify source files under `INPUT/`.
 - Reconcile PDF/CAD/SKP rather than silently preferring one source.
 - Compare dimensions by geometric span, not raw number.
 - Never count the same physical item multiple times because it appears in multiple views.
-- Never claim CAD/SKP/model outputs were parsed or generated when they were not.
+- Never claim CAD/SKP/model/image/Excel output was parsed or generated when it was not.
