@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 SKILL_DIR = ROOT / ".agents" / "skills" / "ai-dg-estimator"
 DIST_DIR = ROOT / "dist"
-VERSION = "0.3.2-alpha"
+VERSION = "0.3.3-alpha"
 DEFAULT_NAME = f"AI-dg-Work-v{VERSION}"
 REQUIRED_FILES = [
     "SKILL.md",
