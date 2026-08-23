@@ -65,21 +65,77 @@ Old Ruby, JSON, Excel, images, reports, models and review data are not allowed t
 
 Do not store manually maintained files in `OUTPUT/`. If a file must survive reruns, keep it in INPUT/OTHER or elsewhere outside WORK/OUTPUT.
 
-## 4. Ask Codex to analyze the folder
+## 4. Mandatory run behavior
+
+For every item whose Component Geometry is `READY` or `PARTIAL_READY`, Codex must create:
+
+```text
+OUTPUT/RUBY/<item-code>.rb
+```
+
+Ruby is required even if project placement, project quantity or fabrication BOM is blocked.
+
+When Ruby is executed in SketchUp it should export, when practical:
+
+```text
+OUTPUT/IMAGES/<item>_iso.png
+OUTPUT/IMAGES/<item>_front.png
+OUTPUT/IMAGES/<item>_side.png
+```
+
+Do not claim the model or images were created if SketchUp was not actually run.
+
+## 5. Mandatory Excel generation
+
+After TAKEOFF JSON is written, always run:
+
+```powershell
+python "$env:USERPROFILE\.agents\skills\ai-dg-estimator\scripts\workspace\export_project_excel.py" "D:\AI-dg\Villa-A"
+```
+
+This creates:
+
+```text
+OUTPUT/EXCEL/AI-dg_Tong-hop-vat-lieu.xlsx
+OUTPUT/EXCEL/AI-dg_Bao-gia.xlsx
+```
+
+The material workbook includes:
+
+```text
+TONG_QUAN
+HANG_MUC
+VAT_LIEU
+CHI_TIET_VAT_LIEU
+NHA_CUNG_CAP
+REVIEW
+SOURCE
+```
+
+The quotation workbook includes:
+
+```text
+BAO_GIA
+DON_GIA_NGUON
+REVIEW
+```
+
+Excel must still be created with explicit blank/review statuses when prices, suppliers, images or fabrication quantities are incomplete. AI-dg must never invent those values.
+
+## 6. Ask Codex to analyze the folder
 
 Example:
 
 ```text
-Dùng skill ai-dg-estimator phân tích project tại D:\AI-dg\Villa-A.
-Bắt đầu bằng fresh-run cleanup bắt buộc: xóa WORK/OUTPUT cũ nhưng giữ nguyên INPUT.
-Sau đó đọc toàn bộ INPUT, đối chiếu PDF/CAD/SKP, dựng Geometry Ledger,
-map vật liệu, bóc các phần đủ bằng chứng, tạo Ruby prototype cho các component đủ readiness,
-và ghi toàn bộ kết quả mới vào OUTPUT. Không yêu cầu tôi upload lại file vào chat.
+Dùng skill ai-dg-estimator triển khai project tại D:\AI-dg\Villa-A.
+Bắt đầu bằng prepare_run.py để xóa WORK/OUTPUT cũ nhưng giữ nguyên INPUT.
+Đọc toàn bộ INPUT, đối chiếu PDF/CAD/SKP, dựng Geometry Ledger và Material Spatial Map.
+Tạo OUTPUT/RUBY/*.rb cho mọi component READY/PARTIAL_READY.
+Tạo TAKEOFF JSON, sau đó chạy export_project_excel.py để luôn sinh 2 file Excel.
+Cuối cùng finalize_output.py. Không yêu cầu tôi upload lại file vào chat.
 ```
 
-Codex should use `prepare_run.py` as the deployment entry point. `scan_input.py` alone is for inventory only and does not replace fresh-run cleanup.
-
-## 5. Expected OUTPUT
+## 7. Expected OUTPUT
 
 ```text
 OUTPUT/
@@ -91,6 +147,7 @@ OUTPUT/
 │  ├─ items.json
 │  ├─ material-regions.json
 │  ├─ bom.json
+│  ├─ suppliers.json          # only when actual supplier research/library exists
 │  └─ review-queue.json
 ├─ EXCEL/
 │  ├─ AI-dg_Tong-hop-vat-lieu.xlsx
@@ -106,12 +163,12 @@ OUTPUT/
 └─ output-manifest.json
 ```
 
-Partial outputs are allowed. A blocked fabrication BOM must not prevent AI-dg from producing a valid geometry report or a review-tagged Ruby prototype.
+Partial outputs are allowed. A blocked fabrication BOM must not prevent AI-dg from producing a valid geometry report, Ruby model prototype or Excel workbook with explicit review cells.
 
-## 6. Finalize output manifest
+## 8. Finalize output manifest
 
 ```powershell
 python "$env:USERPROFILE\.agents\skills\ai-dg-estimator\scripts\workspace\finalize_output.py" "D:\AI-dg\Villa-A" --status PARTIAL
 ```
 
-Use `PASS`, `PARTIAL`, or `FAIL` for the current run status.
+`finalize_output.py` now checks both mandatory Excel files and Ruby coverage for modelable items. A requested `PASS` is downgraded to `PARTIAL` if those mandatory deliverables are missing.
