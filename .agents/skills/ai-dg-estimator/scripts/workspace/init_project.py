@@ -23,6 +23,7 @@ DIRS = [
     "WORK/reconciliation",
     "WORK/logs",
     "OUTPUT/RUBY",
+    "OUTPUT/IMAGES",
     "OUTPUT/TAKEOFF",
     "OUTPUT/EXCEL",
     "OUTPUT/REPORTS",
@@ -53,7 +54,7 @@ def main() -> int:
         return 0
 
     payload = {
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "project_name": args.name or root.name,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "input_root": "INPUT",
@@ -64,12 +65,16 @@ def main() -> int:
             "reconcile_pdf_cad_skp": True,
             "geometry_first": True,
             "unknowns_must_remain_explicit": True,
+            "fresh_run_required": True,
+            "delete_previous_work_before_run": True,
+            "delete_previous_output_before_run": True,
+            "cross_run_output_merge_forbidden": True,
         },
     }
     metadata_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"AI-dg workspace created: {root}")
-    print("Put source files under INPUT/, then run scan_input.py against the project root.")
+    print("Put source files under INPUT/, then use prepare_run.py before each deployment.")
     return 0
 
 
