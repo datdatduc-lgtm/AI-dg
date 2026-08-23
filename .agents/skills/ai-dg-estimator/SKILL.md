@@ -1,11 +1,11 @@
 ---
 name: ai-dg-estimator
-description: Analyze interior/CNC drawing packages from a filesystem project INPUT workspace, reconcile PDF with CAD and optional SketchUp, reconstruct evidence-backed 3D geometry from linked orthographic views, synthesize complete material specifications from legends/notes/details, perform traceable quantity takeoff, generate standalone SketchUp Ruby for every modelable item, and produce material-summary and quotation Excel deliverables without inventing missing dimensions, quantities, prices, suppliers or source references.
+description: Analyze interior/CNC drawing packages from a filesystem project INPUT workspace, reconcile PDF with CAD and optional SketchUp, reconstruct evidence-backed 3D geometry from linked orthographic views, synthesize material specifications from legends/notes/details, perform traceable quantity takeoff, generate standalone SketchUp Ruby for modelable items, and export concise material-summary and quotation Excel files without inventing missing dimensions, quantities, prices, material codes or suppliers.
 license: MIT
 compatibility: Agent Skills / ChatGPT / Codex / OpenCode
 metadata:
-  version: "0.3.2-alpha"
-  stage: "material-spec-synthesis-ruby-excel"
+  version: "0.3.3-alpha"
+  stage: "concise-excel-material-swatch"
 ---
 
 # AI-dg Estimator
@@ -37,11 +37,7 @@ TAKEOFF JSON
           ↓
 Ruby for every READY/PARTIAL_READY component
           ↓
-SketchUp model/preview images when Ruby is executed
-          ↓
-Material-summary Excel + quotation Excel
-          ↓
-Material Excel enrichment from drawing specifications
+Concise material Excel + concise quotation Excel
           ↓
 Reports + output manifest
 ```
@@ -121,7 +117,7 @@ Example:
 
 ```text
 MDF HOÀN THIỆN MELAMINE MÀU GHI SÁNG
-→ core/material = MDF
+→ material/core = MDF
 → finish = Melamine
 → color = ghi sáng
 → thickness = UNKNOWN unless separately proven
@@ -141,11 +137,17 @@ KEO SILICONE
 → adhesive_sealant = silicone
 ```
 
-Do not drop these facts because BOM quantity is incomplete.
+If the PDF legend contains an actual color/material swatch and the runtime can crop it reliably, save the real crop under:
 
-## Mandatory local project outputs
+```text
+OUTPUT/IMAGES/MATERIALS/<material-id-or-code>.png
+```
 
-Write current-run analysis/takeoff artifacts as evidence permits, including:
+and record its path in `material-specifications.json` as `sample_image` or `sample_image_path`. Do not create a fake swatch.
+
+## Mandatory analysis/takeoff outputs
+
+Write current-run artifacts as evidence permits, including:
 
 ```text
 WORK/geometry/drawing-index.json
@@ -169,7 +171,7 @@ OUTPUT/RUBY/<item-code>.rb
 
 Ruby must reconstruct local geometry from the Geometry Ledger and mark unresolved hypotheses `REVIEW_REQUIRED` or `PLACEHOLDER_GUIDE`.
 
-## Excel gate
+## User-facing Excel gate
 
 Every project run must attempt to create:
 
@@ -178,28 +180,94 @@ OUTPUT/EXCEL/AI-dg_Tong-hop-vat-lieu.xlsx
 OUTPUT/EXCEL/AI-dg_Bao-gia.xlsx
 ```
 
-Run the project Excel exporter, then run:
+using:
 
 ```text
-scripts/workspace/enrich_material_excel.py <project-root>
+scripts/workspace/export_project_excel.py <project-root>
 ```
 
-The material workbook must include:
+### Excel is not a debug report
+
+Do **not** expose internal AI-dg engineering fields in the primary user-facing Excel tables unless the user explicitly asks for a technical/audit workbook.
+
+Keep these out of the normal material/quotation sheets:
 
 ```text
-TONG_QUAN
-HANG_MUC
+Ruby paths
+Readiness states
+DERIVED_FROM_VIEWS / EXPLICIT labels
+Geometry role IDs
+Region IDs used only by AI
+long source/evidence strings
+internal AI_DG metadata
+Review Queue internals
+```
+
+Those belong in JSON under WORK/OUTPUT or technical reports.
+
+### Material workbook
+
+The normal material workbook should be concise and use a single primary sheet:
+
+```text
 VAT_LIEU
-CHI_TIET_VAT_LIEU
-THONG_SO_VAT_LIEU
-NHA_CUNG_CAP
-REVIEW
-SOURCE
 ```
 
-`THONG_SO_VAT_LIEU` must expose drawing-backed properties such as material/core, finish, color, thickness, glass type, decal/film, edge treatment, adhesive/sealant, status and source.
+Primary columns:
 
-Missing price/supplier data remains blank or explicitly `CHUA_CO_DON_GIA` / `SUPPLIER_NOT_VERIFIED`. Never invent commercial data.
+```text
+STT
+Hạng mục / Chi tiết
+Mã VL
+Vật liệu / Quy cách
+Dày (mm)
+Màu / Mẫu
+Khối lượng (m²)
+Tấm 1200×2400
+Ghi chú
+```
+
+Rules:
+
+- `Mã VL` is the code actually present in the drawing/spec; leave blank when the drawing has no material code. Do not expose internal `material_id` as though it were a drawing code.
+- `Vật liệu / Quy cách` must preserve useful drawing descriptions such as `MDF hoàn thiện Melamine` or `Kính cường lực + decal mờ`.
+- `Dày` is shown only when proven; otherwise use a clean blank/dash rather than inventing a value.
+- `Màu / Mẫu` should show the drawing color text and, when an actual extracted legend/material sample exists, embed that real sample image.
+- `Khối lượng (m²)` comes from current takeoff/BOM evidence.
+- `Tấm 1200×2400` is `ceil(area_m2 / 2.88)` and is clearly an area-equivalent conversion, not nesting optimization or guaranteed purchasing format.
+- `Ghi chú` should contain only concise fabrication-relevant details such as edge treatment or silicone; do not dump technical provenance into the cell.
+
+### Quotation workbook
+
+The normal quotation workbook should use one primary sheet:
+
+```text
+BAO_GIA
+```
+
+Primary columns:
+
+```text
+STT
+Hạng mục / Chi tiết
+Mã VL
+Vật liệu / Quy cách
+Dày (mm)
+Màu / Mẫu
+KL (m²)
+Tấm 1200×2400
+ĐVT
+Đơn giá
+Thành tiền
+```
+
+Never invent prices. Unit price stays blank unless a verified source exists. The main quotation sheet should not be cluttered with supplier URLs, verification status, source text or review/debug columns.
+
+Supplier/source detail may remain in `OUTPUT/TAKEOFF/suppliers.json` or a separate report when needed.
+
+### Backward compatibility
+
+`scripts/workspace/enrich_material_excel.py` remains only as a compatibility no-op. The exporter reads `material-specifications.json` directly. Do not add a separate `THONG_SO_VAT_LIEU` sheet in the normal user-facing workbook.
 
 ## Completion rule
 
@@ -207,8 +275,7 @@ A local run is incomplete if:
 
 - a modelable item has no Ruby;
 - material legends/details exist but `material-specifications.json` is missing;
-- known material specification facts disappear from Excel;
-- `THONG_SO_VAT_LIEU` is missing from the material workbook;
+- known drawing-backed material description/color/thickness facts disappear from the concise material table;
 - mandatory Excel deliverables were not attempted;
 - old WORK/OUTPUT was reused;
 - a model/image/supplier/price is claimed without actual creation or verification.
