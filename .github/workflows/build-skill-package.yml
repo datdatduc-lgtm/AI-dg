@@ -30,6 +30,7 @@ jobs:
           test -f .agents/skills/ai-dg-estimator/SKILL.md
           test -f .agents/skills/ai-dg-estimator/references/workspace-io.md
           test -f .agents/skills/ai-dg-estimator/scripts/workspace/init_project.py
+          test -f .agents/skills/ai-dg-estimator/scripts/workspace/prepare_run.py
           test -f .agents/skills/ai-dg-estimator/scripts/workspace/scan_input.py
           test -f .agents/skills/ai-dg-estimator/scripts/workspace/finalize_output.py
           python - <<'PY'
@@ -45,14 +46,26 @@ jobs:
       - name: Run dependency-light compatibility smoke test
         run: python .agents/skills/ai-dg-estimator/scripts/smoke_test.py
 
-      - name: Smoke test workspace helpers
+      - name: Smoke test fresh-run workspace helpers
         run: |
           python .agents/skills/ai-dg-estimator/scripts/workspace/init_project.py /tmp/ai-dg-demo --name "CI Demo"
-          touch /tmp/ai-dg-demo/INPUT/OTHER/example.txt
-          python .agents/skills/ai-dg-estimator/scripts/workspace/scan_input.py /tmp/ai-dg-demo
+          echo "source-current" > /tmp/ai-dg-demo/INPUT/OTHER/example.txt
+          echo "stale-work" > /tmp/ai-dg-demo/WORK/extracted/stale.json
+          echo "stale-ruby" > /tmp/ai-dg-demo/OUTPUT/RUBY/stale.rb
+          echo "stale-excel" > /tmp/ai-dg-demo/OUTPUT/EXCEL/stale.xlsx
+
+          python .agents/skills/ai-dg-estimator/scripts/workspace/prepare_run.py /tmp/ai-dg-demo
+
+          test -f /tmp/ai-dg-demo/INPUT/OTHER/example.txt
+          test -f /tmp/ai-dg-demo/project.ai-dg.json
+          test -f /tmp/ai-dg-demo/WORK/logs/run-start.json
+          test -f /tmp/ai-dg-demo/WORK/manifests/input-manifest.json
+          test ! -e /tmp/ai-dg-demo/WORK/extracted/stale.json
+          test ! -e /tmp/ai-dg-demo/OUTPUT/RUBY/stale.rb
+          test ! -e /tmp/ai-dg-demo/OUTPUT/EXCEL/stale.xlsx
+
           echo "# CI output" > /tmp/ai-dg-demo/OUTPUT/REPORTS/analysis.md
           python .agents/skills/ai-dg-estimator/scripts/workspace/finalize_output.py /tmp/ai-dg-demo --status PARTIAL
-          test -f /tmp/ai-dg-demo/WORK/manifests/input-manifest.json
           test -f /tmp/ai-dg-demo/OUTPUT/output-manifest.json
 
       - name: Build ChatGPT Work upload package
