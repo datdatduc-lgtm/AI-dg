@@ -88,7 +88,62 @@ RUBY_READY_NOT_EXECUTED
 
 and do not claim the images/model were created.
 
-## 5. Mandatory Excel deliverables
+## 5. Mandatory material specification synthesis
+
+Before Excel export, AI-dg must synthesize technical/descriptive material properties from all linked drawing evidence, not only from BOM rows.
+
+Read and apply:
+
+```text
+references/material-specification-synthesis.md
+```
+
+Mandatory output:
+
+```text
+OUTPUT/TAKEOFF/material-specifications.json
+```
+
+This file must reconcile, when available:
+
+- material legend / note table;
+- leader notes;
+- sections;
+- details;
+- schedules/specifications;
+- verified CAD/SKP metadata.
+
+Known specification facts must survive even when quantity or thickness is incomplete.
+
+For example, if the drawing gives:
+
+```text
+MDF HOÀN THIỆN MELAMINE MÀU GHI SÁNG
+```
+
+then the material record must keep:
+
+```text
+core/material = MDF
+finish = Melamine
+color = ghi sáng
+thickness = UNKNOWN unless separately proven
+```
+
+If a glass detail gives:
+
+```text
+KÍNH CƯỜNG LỰC DÀY 10MM
+MÀI XIẾT CẠNH 1MM
+DÁN DECAL MỜ MÀU XANH NDTH
+KEO SILICONE
+```
+
+all those facts must be preserved in `material-specifications.json` and exposed in Excel.
+
+Do not reduce a rich drawing specification to generic `MDF` / `GLASS` labels.
+
+## 6. Mandatory Excel deliverables
 
 Every project run must attempt to create both:
 
@@ -97,15 +152,35 @@ OUTPUT/EXCEL/AI-dg_Tong-hop-vat-lieu.xlsx
 OUTPUT/EXCEL/AI-dg_Bao-gia.xlsx
 ```
 
-using:
+First run:
 
 ```text
-scripts/workspace/export_project_excel.py
+scripts/workspace/export_project_excel.py <project-root>
 ```
+
+Then enrich the material workbook using:
+
+```text
+scripts/workspace/enrich_material_excel.py <project-root>
+```
+
+The enrichment step reads:
+
+```text
+OUTPUT/TAKEOFF/material-specifications.json
+```
+
+and must create/update:
+
+```text
+THONG_SO_VAT_LIEU
+```
+
+inside `AI-dg_Tong-hop-vat-lieu.xlsx`, while also adding synthesized drawing specifications to the existing `VAT_LIEU` sheet where a safe material match is possible.
 
 The workbooks must still be created when some downstream data is partial.
 
-Missing information is represented by explicit blank/status cells, not invented values.
+Missing information is represented by explicit blank/status/UNKNOWN cells, not invented values.
 
 ### Material workbook
 
@@ -116,9 +191,31 @@ TONG_QUAN
 HANG_MUC
 VAT_LIEU
 CHI_TIET_VAT_LIEU
+THONG_SO_VAT_LIEU
 NHA_CUNG_CAP
 REVIEW
 SOURCE
+```
+
+`THONG_SO_VAT_LIEU` must expose drawing-backed properties such as:
+
+```text
+Hạng mục
+Material ID
+Vật liệu / hệ vật liệu
+Vai trò
+Region / Part / Layer
+Core
+Finish
+Color
+Thickness
+Glass type
+Decal / film
+Edge treatment
+Adhesive / sealant
+Synthesized specification
+Status
+Source
 ```
 
 `HANG_MUC` should embed the SketchUp preview image when `OUTPUT/IMAGES` contains a matching item image. If no image exists yet, the workbook must say that Ruby needs to be run/exported; it must not invent a picture.
@@ -142,7 +239,7 @@ SUPPLIER_NOT_VERIFIED
 
 The workbook may contain formulas for totals but only over real supplied/verified quantity and price cells.
 
-## 6. Supplier data
+## 7. Supplier data
 
 When web access or a user supplier library is available, create:
 
@@ -169,7 +266,7 @@ verification_status
 
 If no supplier research was actually performed, keep `SUPPLIER_NOT_VERIFIED` rather than fabricating companies or prices.
 
-## 7. Recommended run order
+## 8. Recommended run order
 
 ```text
 prepare_run
@@ -178,21 +275,27 @@ prepare_run
 → Drawing Index / View Link Graph
 → Geometry Ledger
 → Material Spatial Map
+→ Material Specification Synthesis
+→ write material-specifications.json
 → Readiness Matrix
 → write TAKEOFF JSON
 → generate Ruby for every READY/PARTIAL_READY component
 → run/test Ruby in SketchUp when execution is available
 → export preview images when Ruby runs
 → export both Excel workbooks
+→ enrich material Excel from material-specifications.json
 → write reports
 → finalize_output
 ```
 
-## 8. Completion gate
+## 9. Completion gate
 
 A normal local project run is not considered complete if:
 
 - a modelable item has no `OUTPUT/RUBY/*.rb`;
+- `material-specifications.json` is missing when material legends/notes/details are present;
+- known legend/detail material properties disappear from Excel;
+- `THONG_SO_VAT_LIEU` is missing from the material workbook;
 - neither Excel workbook was attempted;
 - old OUTPUT from a previous run was reused;
 - a price/supplier/image/model is claimed but was not actually created or verified.
