@@ -5,8 +5,8 @@ This repository keeps one canonical AI-dg skill source for ChatGPT Work, Codex a
 Current version:
 
 - Skill: `ai-dg-estimator`
-- Version: `0.3.0-alpha`
-- Stage: `workspace-io-ruby-prototype`
+- Version: `0.3.1-alpha`
+- Stage: `workspace-ruby-excel-deliverables`
 - Canonical source: `.agents/skills/ai-dg-estimator/`
 
 ## Upload package
@@ -14,7 +14,7 @@ Current version:
 GitHub Actions builds:
 
 ```text
-AI-dg-Work-v0.3.0-alpha.zip
+AI-dg-Work-v0.3.1-alpha.zip
 ```
 
 The ZIP root contains `SKILL.md` directly with references, schemas, examples, data and scripts.
@@ -25,17 +25,20 @@ Recommended ChatGPT Work install path:
 Skills → Create → Upload from your computer
 ```
 
-Select `AI-dg-Work-v0.3.0-alpha.zip`.
+Select `AI-dg-Work-v0.3.1-alpha.zip`.
 
-## What is new in v0.3
+## What is new in v0.3.1
 
-The drawing methodology remains geometry-first. V0.3 adds a filesystem project contract for Codex/OpenCode/local use:
+The geometry-first methodology remains unchanged. The main local/Codex changes are:
 
-```text
-INPUT → WORK → OUTPUT
-```
+- every deployment starts with a fresh-run reset that keeps INPUT but clears generated WORK/OUTPUT;
+- every `READY` or `PARTIAL_READY` component must receive a standalone Ruby file;
+- local project runs must attempt both Excel deliverables;
+- material-summary Excel can embed actual SketchUp preview images from OUTPUT/IMAGES;
+- quotation Excel keeps missing prices/suppliers blank and explicit rather than inventing values;
+- output finalization checks mandatory Excel and Ruby coverage.
 
-This does not require ChatGPT Work itself to have local filesystem access. In ChatGPT Work, continue using uploaded drawing files. In Codex/OpenCode/local use, prefer the project workspace defined in `references/workspace-io.md` and root `WORKSPACE.md`.
+These filesystem features primarily target Codex/OpenCode/local use. ChatGPT Work may not have access to the user's local workspace; when local filesystem access is unavailable, use uploaded files and retain the same geometry/reconciliation rules.
 
 ## Core intent
 
@@ -56,9 +59,9 @@ python package_chatgpt.py
 Outputs:
 
 ```text
-dist/AI-dg-Work-v0.3.0-alpha.zip
-dist/AI-dg-Work-v0.3.0-alpha.sha256
-dist/AI-dg-Work-v0.3.0-alpha-contents.txt
+dist/AI-dg-Work-v0.3.1-alpha.zip
+dist/AI-dg-Work-v0.3.1-alpha.sha256
+dist/AI-dg-Work-v0.3.1-alpha-contents.txt
 dist/ai-dg-estimator.zip
 ```
 
@@ -67,5 +70,7 @@ For deterministic local PDF/Excel tooling:
 ```bash
 python -m pip install -e ".[runtime]"
 ```
+
+Runtime extras include PyMuPDF, openpyxl, Pillow and jsonschema.
 
 The GitHub `main` branch remains the source of truth.
