@@ -1,17 +1,49 @@
 # Material interpretation and spatial mapping rules
 
-## Preserve source codes
+## Preserve source codes and complete drawing specifications
 
-Never replace a drawing material code with a guessed product. Keep the source code exactly as shown, then map it only when a verified legend, schedule, note, detail or material library supplies the meaning.
+Never replace a drawing material code or note with a guessed product. Keep the source wording and map it only when a verified legend, schedule, note, detail or material library supplies the meaning.
+
+Material extraction is **not complete** when AI-dg has only identified a generic family such as `MDF` or `GLASS` while the drawing gives richer specification data.
+
+For each material system, reconcile all linked evidence from:
+
+- material legend / note table;
+- leader notes on elevation/plan/section;
+- section/detail callouts;
+- schedules/specifications;
+- CAD/SKP metadata only when actually parseable.
+
+The result must preserve every compatible known property, even when quantity or fabrication readiness is still partial.
 
 Example:
 
 ```text
-source_material_code: WD-03
-resolved_finish: Oak veneer
+source note: MDF HOÀN THIỆN MELAMINE MÀU GHI SÁNG
+
+core/material: MDF
+finish: Melamine
+color: ghi sáng
+thickness_mm: UNKNOWN unless another verified source states it
 ```
 
-Only set a normalized material identity when evidence supports the mapping.
+Example glass system:
+
+```text
+legend: KÍNH DÁN DECAL MỜ MÀU XANH NDTH
+detail: KÍNH CƯỜNG LỰC DÀY 10MM
+        MÀI XIẾT CẠNH 1MM
+        KEO SILICONE
+
+material_family: glass
+glass_type: kính cường lực
+thickness_mm: 10
+film_decal: decal mờ màu xanh NDTH
+edge_treatment: mài xiết cạnh 1 mm
+adhesive_sealant: silicone
+```
+
+Do not lose these facts simply because BOM quantities are not ready.
 
 ## A material must belong somewhere
 
@@ -25,6 +57,11 @@ For every material, identify when possible:
 - material role;
 - thickness;
 - side/orientation;
+- finish;
+- color;
+- film/decal;
+- edge treatment;
+- adhesive/sealant;
 - source view/detail/legend.
 
 Typical roles:
@@ -48,10 +85,35 @@ If the upper region is glass and a detail identifies 10 mm tempered glass plus d
 ```text
 upper region
 ├─ glass layer: 10 mm tempered glass
-└─ surface layer: decal/film
+├─ surface layer: matte blue NDTH decal/film
+├─ edge treatment: 1 mm edge grinding when stated
+└─ joint/sealant: silicone where called out
 ```
 
 Do not merely report both materials in a register without relating them to the geometry.
+
+## Material specification synthesis is separate from BOM
+
+AI-dg must create:
+
+```text
+OUTPUT/TAKEOFF/material-specifications.json
+```
+
+before final Excel export for a local project run.
+
+This file synthesizes drawing-backed technical/descriptive properties and is independent from BOM readiness.
+
+A material can therefore be:
+
+```text
+SPECIFICATION: READY
+QUANTITY: PARTIAL / BLOCKED
+```
+
+Known specification properties must still appear in Excel.
+
+Read and apply `references/material-specification-synthesis.md` for the required synthesis method.
 
 ## Material boundaries come from linked views
 
@@ -74,6 +136,8 @@ Do not infer thickness from a material family name unless:
 - a verified project material specification uniquely defines it.
 
 A finish code and a core thickness are different facts.
+
+If thickness is unknown, store `null`/`UNKNOWN`; do not drop the rest of the material specification.
 
 ## Core vs finish vs layer
 
@@ -103,7 +167,7 @@ Likewise:
 glass + decal
 ```
 
-should remain separate physical/material layers if the detail shows them separately.
+should remain separate physical/material layers if the detail shows them separately, while the Excel-facing material system may summarize their combined specification for readability.
 
 ## Quantity follows geometry
 
@@ -114,7 +178,8 @@ Correct order:
 ```text
 reconstruct physical region/part
 → map material/layer to region
-→ determine dimensions/thickness
+→ synthesize material specification from legend + notes + details
+→ determine dimensions/thickness when known
 → calculate area/volume/length/count
 ```
 
@@ -137,3 +202,5 @@ Do not invent waste percentages. Use `waste_factor` from a verified material lib
 ## Pricing
 
 Material records may contain reference metadata, but the skill must not present a final quotation unless the user supplies a verified price source and a pricing workflow is executed.
+
+Drawing-backed material specification and supplier/commercial product identity are separate. Never turn a drawing description into a guessed brand, product code, supplier or price.
