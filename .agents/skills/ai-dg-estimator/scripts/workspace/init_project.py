@@ -54,7 +54,7 @@ def main() -> int:
         return 0
 
     payload = {
-        "schema_version": "0.2",
+        "schema_version": "0.3",
         "project_name": args.name or root.name,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "input_root": "INPUT",
@@ -69,6 +69,10 @@ def main() -> int:
             "delete_previous_work_before_run": True,
             "delete_previous_output_before_run": True,
             "cross_run_output_merge_forbidden": True,
+            "ruby_required_for_ready_or_partial_ready_components": True,
+            "excel_material_summary_required": True,
+            "excel_quotation_required": True,
+            "supplier_and_price_values_must_be_verified_or_blank": True,
         },
     }
     metadata_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
