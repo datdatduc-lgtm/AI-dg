@@ -21,6 +21,7 @@ AI-dg-PROJECT/
 │  └─ logs/
 ├─ OUTPUT/
 │  ├─ RUBY/
+│  ├─ IMAGES/
 │  ├─ TAKEOFF/
 │  ├─ EXCEL/
 │  ├─ REPORTS/
@@ -28,11 +29,36 @@ AI-dg-PROJECT/
 └─ project.ai-dg.json
 ```
 
-The skill installation under `~/.agents/skills/ai-dg-estimator` is treated as code/reference only. Do not store user drawing packages inside the installed skill.
+The skill installation under `~/.agents/skills/ai-dg-estimator` is code/reference only. Never store user drawing packages inside the installed skill.
+
+## Mandatory fresh-run policy
+
+Every new analysis/deployment is a **fresh run**.
+
+Before reading or reasoning over the project, AI-dg must run:
+
+```text
+scripts/workspace/prepare_run.py <project_root>
+```
+
+This operation must:
+
+1. require a valid `project.ai-dg.json` marker;
+2. preserve `INPUT/` completely;
+3. preserve `project.ai-dg.json`;
+4. delete the previous generated `WORK/` tree;
+5. delete the previous `OUTPUT/` tree and every artifact inside it;
+6. recreate the canonical WORK/OUTPUT folders;
+7. generate a new run marker;
+8. rescan current INPUT and create a new `WORK/manifests/input-manifest.json`.
+
+**Cross-run merging is forbidden.** Ruby, JSON, Excel, images, reports, models, manifests, geometry ledgers, review queues and other artifacts from an older run must not survive into the new run unless they are explicitly re-generated from the current INPUT.
+
+Because `OUTPUT/` is disposable generated state, users must not place manually maintained source files there. Files that must survive reruns belong outside OUTPUT, normally under INPUT/OTHER or another project-controlled folder outside WORK/OUTPUT.
 
 ## INPUT contract
 
-Codex must scan `INPUT/` recursively before analysis. Supported categories are inferred from extension and preserved by original relative path.
+Codex must scan `INPUT/` recursively after the fresh-run reset. Supported categories are inferred from extension and preserved by original relative path.
 
 Typical source files:
 
@@ -45,9 +71,11 @@ Typical source files:
 
 Do not silently ignore an unknown file. Put it in the manifest as `OTHER` or `UNSUPPORTED` and report whether it was inspected.
 
+Never modify or delete an INPUT source during cleanup, analysis, reconstruction, takeoff or export.
+
 ## Input manifest
 
-Before reasoning, create or refresh:
+The authoritative inventory for the current run is:
 
 ```text
 WORK/manifests/input-manifest.json
@@ -66,7 +94,7 @@ analysis_status
 notes
 ```
 
-This manifest is the authoritative inventory of what the run actually saw.
+The manifest must describe the current INPUT state after the fresh-run reset, not a previous run.
 
 ## Source-package rule
 
@@ -86,17 +114,21 @@ Dùng AI-dg phân tích project tại D:/CongTrinh/Villa-A
 
 Codex should:
 
-1. locate `project.ai-dg.json` or initialize the workspace if explicitly requested;
-2. run `scripts/workspace/scan_input.py` against the project root;
-3. inspect the manifest and all relevant source files;
-4. build Drawing Index, View Link Graph, Geometry Ledger, material mapping and reconciliation;
-5. write intermediate machine-readable results under `WORK/`;
-6. write user deliverables only under `OUTPUT/`;
-7. never require the user to upload the same local files into chat when filesystem access is available.
+1. locate `project.ai-dg.json`;
+2. run `scripts/workspace/prepare_run.py` against the project root;
+3. confirm the previous WORK/OUTPUT were removed and a fresh input manifest was created;
+4. inspect the current manifest and all relevant source files;
+5. build Drawing Index, View Link Graph, Geometry Ledger, material mapping and reconciliation;
+6. write intermediate machine-readable results under the newly created `WORK/`;
+7. write user deliverables only under the newly created `OUTPUT/`;
+8. create `OUTPUT/output-manifest.json` at the end;
+9. never require the user to upload the same local files into chat when filesystem access is available.
+
+Do not start a deployment by calling `scan_input.py` alone if prior WORK/OUTPUT may exist. `scan_input.py` is an inventory helper; `prepare_run.py` is the required deployment entry point.
 
 ## WORK contract
 
-`WORK/` is reproducible intermediate state, not the final deliverable.
+`WORK/` is reproducible intermediate state for exactly one run.
 
 Recommended files:
 
@@ -110,14 +142,15 @@ WORK/geometry/view-link-graph.json
 WORK/geometry/geometry-ledger.json
 WORK/reconciliation/source-reconciliation.json
 WORK/reconciliation/review-queue.json
+WORK/logs/run-start.json
 WORK/logs/run-log.md
 ```
 
-Only create files that are supported by the current adapters. Missing adapters must remain explicit.
+Only create files supported by the current adapters. Missing adapters remain explicit.
 
 ## OUTPUT contract
 
-`OUTPUT/` contains stable artifacts intended for the user or downstream tools.
+`OUTPUT/` contains artifacts for the current run only.
 
 ### RUBY
 
@@ -125,7 +158,17 @@ Only create files that are supported by the current adapters. Missing adapters m
 OUTPUT/RUBY/<item-or-project>.rb
 ```
 
-Standalone SketchUp reconstruction prototypes before a full plugin exists. Ruby must preserve source/readiness metadata and clearly mark review hypotheses.
+Standalone SketchUp reconstruction prototypes. Ruby must preserve source/readiness metadata and mark review hypotheses.
+
+### IMAGES
+
+```text
+OUTPUT/IMAGES/<item>_iso.png
+OUTPUT/IMAGES/<item>_front.png
+OUTPUT/IMAGES/<item>_side.png
+```
+
+Use actual generated/model views when available; do not present invented renders as verified model output.
 
 ### TAKEOFF
 
@@ -136,15 +179,16 @@ OUTPUT/TAKEOFF/bom.json
 OUTPUT/TAKEOFF/review-queue.json
 ```
 
-Detailed fabrication BOM is allowed only when its readiness gate passes. Geometry/material-region takeoff may exist earlier and must be labeled accordingly.
+Fabrication BOM is allowed only when its readiness gate passes. Geometry/material-region takeoff may exist earlier and must be labeled accordingly.
 
 ### EXCEL
 
 ```text
-OUTPUT/EXCEL/AI-dg-estimate.xlsx
+OUTPUT/EXCEL/AI-dg_Tong-hop-vat-lieu.xlsx
+OUTPUT/EXCEL/AI-dg_Bao-gia.xlsx
 ```
 
-Workbook may include Drawing Index, Items, Geometry, Materials, BOM, Review, Sources and later pricing/labor/schedule sheets.
+Excel may include item images, drawing/item index, material-region detail, summarized materials, sources, review status, supplier references, prices and quotations when verified inputs exist.
 
 ### REPORTS
 
@@ -164,25 +208,27 @@ Reserved for generated or verified model artifacts when the runtime can create t
 OUTPUT/MODEL/*.skp
 ```
 
-Do not claim a model file exists unless it was actually created and verified.
+Do not claim a model exists unless it was actually created and verified.
 
 ## Output manifest
 
-At the end of a run, create:
+At the end of the current run, create:
 
 ```text
 OUTPUT/output-manifest.json
 ```
 
-It should inventory every generated deliverable with path, type, status and source basis.
+It should inventory every artifact actually generated in this run with path, type, status and source basis.
 
-## Safe overwrite rules
+## Cleanup safety rules
 
-- Never modify files under `INPUT/`.
-- Do not delete user-created OUTPUT files blindly.
-- Generated files should use deterministic names where possible.
-- Before replacing a generated file from a previous run, preserve or record the previous version when practical.
-- `WORK/` may be regenerated, but only inside the selected AI-dg project root.
+- `INPUT/` is immutable and never deleted by the fresh-run reset.
+- `project.ai-dg.json` is preserved.
+- Only `WORK/` and `OUTPUT/` directly under the validated project root are disposable.
+- If WORK or OUTPUT is a symlink/junction, cleanup must refuse to run.
+- `project.ai-dg.json` is required before destructive cleanup; without it, abort.
+- No backup of old OUTPUT is created by default because the user requires zero cross-run overlap.
+- If old deliverables must be preserved, copy them outside WORK/OUTPUT before starting a new run.
 
 ## Readiness-aware output
 
@@ -198,4 +244,4 @@ Ruby Prototype: READY_WITH_REVIEW
 Excel: PARTIAL
 ```
 
-Do not suppress useful partial artifacts merely because one later-stage deliverable is blocked.
+Do not suppress useful current-run artifacts merely because one later-stage deliverable is blocked.
