@@ -17,15 +17,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 SKILL_DIR = ROOT / ".agents" / "skills" / "ai-dg-estimator"
 DIST_DIR = ROOT / "dist"
-VERSION = "0.2.2-alpha"
+VERSION = "0.3.0-alpha"
 DEFAULT_NAME = f"AI-dg-Work-v{VERSION}"
 REQUIRED_FILES = [
     "SKILL.md",
+    "references/workspace-io.md",
     "references/drawing-reading-method.md",
     "references/orthographic-reconstruction.md",
     "references/pdf-cad-reconciliation.md",
     "references/material-rules.md",
     "references/chatgpt-test-protocol.md",
+    "references/sketchup-ruby-prototype.md",
+    "scripts/workspace/init_project.py",
+    "scripts/workspace/scan_input.py",
+    "scripts/workspace/finalize_output.py",
     "scripts/smoke_test.py",
     "scripts/validate_items.py",
 ]
