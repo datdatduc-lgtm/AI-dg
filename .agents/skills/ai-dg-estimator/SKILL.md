@@ -1,25 +1,28 @@
 ---
 name: ai-dg-estimator
-description: Analyze interior/CNC drawing packages, reconcile PDF with CAD and optional SketchUp, reconstruct 3D geometry from linked orthographic views, map materials to physical regions, build a traceable drawing graph, perform evidence-backed quantity takeoff, flag source conflicts, and prepare BOM/Excel or SketchUp reconstruction plans. Never invent missing dimensions, materials, quantities, coordinates, revisions, or source references.
+description: Analyze interior/CNC drawing packages from a project INPUT workspace, reconcile PDF with CAD and optional SketchUp, reconstruct 3D geometry from linked orthographic views, map materials to physical regions, perform traceable quantity takeoff, generate standalone SketchUp Ruby prototypes, Excel and reports into structured OUTPUT folders, and never invent missing dimensions, materials, quantities, coordinates, revisions, or source references.
 license: MIT
 compatibility: Agent Skills / ChatGPT / Codex / OpenCode
 metadata:
-  version: "0.2.2-alpha"
-  stage: "ruby-prototype-test"
+  version: "0.3.0-alpha"
+  stage: "workspace-io-ruby-prototype"
 ---
 
 # AI-dg Estimator
 
-AI-dg is a drawing-understanding, geometric-reconstruction and quantity-takeoff skill for interior, furniture, joinery, and CNC work.
+AI-dg is a drawing-understanding, geometric-reconstruction and quantity-takeoff skill for interior, furniture, joinery and CNC work.
 
-The current phase tests whether the model can read multiple technical views as projections of one 3D object and convert a verified Geometry Ledger into a small standalone SketchUp Ruby prototype before any full SketchUp plugin is built.
+The current phase adds a filesystem-first project workflow for Codex/OpenCode/local use and tests Geometry Ledger → standalone SketchUp Ruby reconstruction before a full SketchUp plugin is built.
 
 ## Core model
 
-Treat the user's files as one **drawing package**, not as unrelated sources.
+Treat all files in one project `INPUT/` as one drawing package, not as unrelated chat attachments.
 
 ```text
-PDF + CAD (+ optional SKP)
+Project INPUT/
+  PDF + CAD (+ optional SKP/specs)
+          ↓
+Input manifest
           ↓
 Drawing reconciliation
           ↓
@@ -33,7 +36,8 @@ Canonical drawing graph
           ↓
 Readiness classification
           ↓
-Takeoff / Ruby prototype / BOM / later plugin
+Project OUTPUT/
+  Ruby + Takeoff + Excel + Reports + Model
 ```
 
 PDF and CAD usually represent the same authored drawing. Therefore:
@@ -42,13 +46,59 @@ PDF and CAD usually represent the same authored drawing. Therefore:
 - a mismatch is an error/review condition, not permission to silently choose one side;
 - SketchUp, when supplied, is a third representation to audit against the same canonical geometry.
 
+## Workspace-first Codex workflow
+
+When filesystem access is available, prefer a project workspace instead of asking the user to upload many files into chat.
+
+Canonical layout:
+
+```text
+AI-dg-PROJECT/
+├─ INPUT/
+│  ├─ PDF/
+│  ├─ CAD/
+│  ├─ SKP/
+│  └─ OTHER/
+├─ WORK/
+│  ├─ manifests/
+│  ├─ extracted/
+│  ├─ geometry/
+│  ├─ reconciliation/
+│  └─ logs/
+├─ OUTPUT/
+│  ├─ RUBY/
+│  ├─ TAKEOFF/
+│  ├─ EXCEL/
+│  ├─ REPORTS/
+│  └─ MODEL/
+└─ project.ai-dg.json
+```
+
+Rules:
+
+1. Never modify source files under `INPUT/`.
+2. Scan `INPUT/` recursively and create `WORK/manifests/input-manifest.json` before analysis.
+3. If a local source exists but an adapter cannot inspect it, record `adapter_unavailable` / `UNREADABLE_SOURCE`; never pretend it was read.
+4. Write intermediate/reproducible data under `WORK/`.
+5. Write user deliverables only under `OUTPUT/`.
+6. When Codex can access the filesystem, do not require the user to re-upload the same project files into chat.
+7. At the end of a run, create `OUTPUT/output-manifest.json` listing generated artifacts.
+
+Workspace helpers:
+
+```text
+scripts/workspace/init_project.py
+scripts/workspace/scan_input.py
+scripts/workspace/finalize_output.py
+```
+
 ## Non-negotiable rules
 
-1. Never invent a dimension, quantity, material code, thickness, coordinate, rotation, price, revision, page, layout, section, detail, or object relationship.
+1. Never invent a dimension, quantity, material code, thickness, coordinate, rotation, price, revision, page, layout, section, detail or object relationship.
 2. Never hide a PDF/CAD/SKP conflict by selecting the value that looks more convenient.
 3. Every important extracted or derived fact must keep evidence and source provenance.
-4. Do not count the same physical item again merely because it appears in plan, elevation, side, section, and detail views.
-5. Material codes must be resolved through legends/schedules/notes when available. Do not infer substrate, finish, face, edge, or thickness from a short code without evidence.
+4. Do not count the same physical item again merely because it appears in plan, elevation, side, section and detail views.
+5. Material codes must be resolved through legends/schedules/notes when available. Do not infer substrate, finish, face, edge or thickness from a short code without evidence.
 6. **Do not treat drawing views as independent lists of numbers. Reconstruct one object coordinate frame and infer the 3D geometry that simultaneously explains the linked views.**
 7. **Before declaring a dimensional mismatch, verify that both dimensions measure the same geometric span. Overall, region, subregion, thickness, offset and gap dimensions are not interchangeable.**
 8. Geometric derivation is allowed when multiple linked views constrain the result. Mark it `DERIVED_FROM_VIEWS` and cite all supporting views. Trade-habit guessing is forbidden.
@@ -61,17 +111,19 @@ PDF and CAD usually represent the same authored drawing. Therefore:
 15. Do not modify source drawing files unless the user explicitly asks for an edit workflow.
 16. If the current runtime cannot parse a binary CAD/SKP file, state `adapter_unavailable` for that source. Never pretend the file was parsed.
 17. Unknown and genuinely conflicting values remain unknown/conflicting until evidence resolves them.
+18. Never store user project files inside the installed skill directory under `~/.agents/skills/`.
 
 ## Required reading order
 
-For a full drawing analysis, read and apply these references in this order:
+For a full local project analysis, read and apply these references in this order:
 
-1. `references/drawing-reading-method.md`
-2. `references/orthographic-reconstruction.md`
-3. `references/pdf-cad-reconciliation.md`
-4. `references/material-rules.md`
-5. `references/chatgpt-test-protocol.md` when running acceptance tests
-6. `references/sketchup-ruby-prototype.md` when reconstruction or Ruby generation is requested
+1. `references/workspace-io.md`
+2. `references/drawing-reading-method.md`
+3. `references/orthographic-reconstruction.md`
+4. `references/pdf-cad-reconciliation.md`
+5. `references/material-rules.md`
+6. `references/chatgpt-test-protocol.md` when running acceptance tests
+7. `references/sketchup-ruby-prototype.md` when reconstruction or Ruby generation is requested
 
 ## What "understand the drawing" means
 
@@ -79,7 +131,7 @@ The skill should identify and connect:
 
 - project / drawing package / revision;
 - sheet number and sheet title;
-- plan, elevation, side, section, detail, schedule, legend, and note;
+- plan, elevation, side, section, detail, schedule, legend and note;
 - section/detail callouts and their target views;
 - room/zone/location;
 - item code and item name;
@@ -90,7 +142,7 @@ The skill should identify and connect:
 - material code, core/substrate, thickness, surface/finish, edge treatment, grain direction when stated;
 - material-to-region/layer/surface mapping;
 - CAD block/layer/entity relationships when accessible;
-- item placement, insertion point, rotation, and footprint when accessible;
+- item placement, insertion point, rotation and footprint when accessible;
 - SketchUp component/group/material/tag/transformation/scene/section relationships when accessible.
 
 ## Mandatory geometry-first workflow
@@ -171,11 +223,40 @@ Geometry Takeoff Readiness
 Material Region Takeoff Readiness
 Fabrication Part BOM Readiness
 Procurement BOM Readiness
+Ruby Prototype Readiness
+Excel Readiness
 ```
 
 A component may be `PARTIAL_READY` or `READY` locally while project placement and project quantity remain blocked.
 
-### I. Only then perform takeoff or Ruby prototype
+### I. Write structured outputs
+
+When a project workspace is active, write results to:
+
+```text
+WORK/geometry/drawing-index.json
+WORK/geometry/view-link-graph.json
+WORK/geometry/geometry-ledger.json
+WORK/reconciliation/source-reconciliation.json
+WORK/reconciliation/review-queue.json
+
+OUTPUT/RUBY/*.rb
+OUTPUT/TAKEOFF/items.json
+OUTPUT/TAKEOFF/material-regions.json
+OUTPUT/TAKEOFF/bom.json
+OUTPUT/TAKEOFF/review-queue.json
+OUTPUT/EXCEL/AI-dg-estimate.xlsx
+OUTPUT/REPORTS/analysis.md
+OUTPUT/REPORTS/drawing-index.md
+OUTPUT/REPORTS/geometry-ledger.md
+OUTPUT/REPORTS/source-reconciliation.md
+OUTPUT/REPORTS/readiness.md
+OUTPUT/output-manifest.json
+```
+
+Only create outputs supported by current evidence/runtime. Missing outputs must be reported as blocked/unavailable rather than fabricated.
+
+### J. Only then perform takeoff or Ruby prototype
 
 Detailed BOM must follow reconstructed physical parts/regions, not isolated numbers copied from one view.
 
@@ -195,6 +276,7 @@ When the user asks to analyze a drawing before pricing/modeling, prefer this str
 8. `Source Reconciliation`
 9. `Review Queue`
 10. `Readiness Matrix`
+11. `Generated Artifact Manifest`
 
 A `Geometry Ledger` should contain:
 
@@ -286,6 +368,8 @@ Component Geometry: READY / PARTIAL_READY / BLOCKED
 Project Placement: READY / PARTIAL_READY / BLOCKED
 Project Quantity: READY / PARTIAL_READY / BLOCKED
 Fabrication BOM: READY / PARTIAL_READY / BLOCKED
+Ruby Prototype: READY / READY_WITH_REVIEW / BLOCKED
+Excel: READY / PARTIAL / BLOCKED
 ```
 
 ## Standalone Ruby prototype gate
@@ -309,19 +393,23 @@ Current VN-1 prototype:
 scripts/sketchup/vn1_prototype.rb
 ```
 
-It is intentionally a local reconstruction test. It does not claim project placement, project quantity or fabrication BOM readiness.
+For a project run, copy/generate the tested prototype under:
+
+```text
+OUTPUT/RUBY/VN-1.rb
+```
 
 ## Runtime compatibility
 
 The skill methodology must remain usable even when the current runtime does not provide optional Python packages.
 
-- Do not fail skill installation merely because `jsonschema`, `openpyxl`, or `PyMuPDF` is absent.
+- Do not fail skill installation merely because `jsonschema`, `openpyxl` or `PyMuPDF` is absent.
 - Use `scripts/smoke_test.py` for compatibility verification; its core path requires only the Python standard library.
 - `scripts/validate_items.py` uses full JSON Schema validation when `jsonschema` is present and a safety-critical stdlib fallback otherwise.
 - Excel export is optional during installation/runtime validation. If `openpyxl` is unavailable, report the exporter as unavailable instead of treating the skill itself as invalid.
 - PDF parsing through `scripts/analyze_pdf.py` requires PyMuPDF; when unavailable in ChatGPT Work, use the platform's native file-reading capability for methodology tests and do not claim the local parser ran.
-- Codex/OpenCode/local environments may install the optional dependencies from `pyproject.toml` for deterministic PDF/Excel tooling.
+- Codex/OpenCode/local environments may install optional dependencies from `pyproject.toml` for deterministic PDF/Excel tooling.
 
 ## Existing deterministic tools
 
-The repository also contains deterministic scripts for PDF extraction, validation, BOM calculations and Excel export. Use them when the runtime supports them, but do not let their simpler schema override the geometry-first methodology above.
+The repository contains deterministic scripts for PDF extraction, validation, BOM calculations, Excel export, workspace initialization, input inventory and output manifest generation. Use them when the runtime supports them, but do not let their simpler schemas override the geometry-first methodology above.
