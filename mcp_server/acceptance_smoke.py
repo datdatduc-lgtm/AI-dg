@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Repeatable, non-destructive AI-DG MCP acceptance smoke test.
 
-The test intentionally never enables write mode and never calls the provider.
-It reports ``PARTIAL`` when an already-running legacy SketchUp runtime still
-times out on the bounded hierarchy action; a fresh runtime should turn that
-case into ``PASS``.
+The test intentionally never enables write mode and never calls a model
+provider. Agent conversations are owned by the native Codex/Cline runtimes;
+this process only verifies the shared SketchUp MCP contract.
 """
 
 from __future__ import annotations
@@ -46,8 +45,10 @@ async def main() -> int:
         async with ClientSession(read, write) as session:
             await session.initialize()
             names = {tool.name for tool in (await session.list_tools()).tools}
-            required = {"sketchup_health", "sketchup_get_selection", "sketchup_get_camera", "ai_dg_agent_ask", "aidg_write_text_guarded", "ai_dg_model_select", "ai_dg_provider_status", "ai_dg_provider_configure", "ai_dg_provider_disconnect", "ai_dg_9router_sync_models", "ai_dg_source_ingest", "ai_dg_pipeline_run", "ai_dg_pipeline_artifacts", "ai_dg_review_queue", "ai_dg_model_spec", "ai_dg_build_plan", "ai_dg_execute_build_plan", "ai_dg_verification", "sketchup_get_semantic_item", "sketchup_create_semantic_item", "sketchup_create_component", "sketchup_create_cabinet", "sketchup_create_panel", "sketchup_create_partition", "sketchup_create_shelf", "sketchup_create_door", "sketchup_create_drawer", "sketchup_create_countertop", "sketchup_create_component_from_spec", "sketchup_transform_entity", "sketchup_apply_material", "sketchup_set_tag", "sketchup_undo"}
-            report["tests"].append({"name": "mcp_discovery", "status": "PASS" if required <= names else "FAIL", "tool_count": len(names)})
+            required = {"sketchup_health", "sketchup_get_selection", "sketchup_get_camera", "aidg_write_text_guarded", "ai_dg_source_ingest", "ai_dg_pipeline_run", "ai_dg_pipeline_artifacts", "ai_dg_review_queue", "ai_dg_model_spec", "ai_dg_build_plan", "ai_dg_execute_build_plan", "ai_dg_verification", "sketchup_get_semantic_item", "sketchup_create_semantic_item", "sketchup_create_component", "sketchup_create_cabinet", "sketchup_create_panel", "sketchup_create_partition", "sketchup_create_shelf", "sketchup_create_door", "sketchup_create_drawer", "sketchup_create_countertop", "sketchup_create_component_from_spec", "sketchup_transform_entity", "sketchup_apply_material", "sketchup_set_tag", "sketchup_undo"}
+            legacy = {"ai_dg_agent_ask", "ai_dg_model_status", "ai_dg_model_select", "ai_dg_9router_sync_models", "ai_dg_provider_status", "ai_dg_provider_configure", "ai_dg_provider_disconnect", "ai_dg_9router_test", "ai_dg_session_save", "ai_dg_session_load"}
+            discovery_ok = required <= names and not names.intersection(legacy)
+            report["tests"].append({"name": "mcp_discovery_without_legacy_agent", "status": "PASS" if discovery_ok else "FAIL", "tool_count": len(names), "legacy_tools": sorted(names.intersection(legacy))})
 
             tool_metadata = parse(await session.call_tool("ai_dg_list_tools", {}))
             tool_rows = tool_metadata.get("tools", [])
@@ -100,22 +101,6 @@ async def main() -> int:
             eval_hidden = "sketchup_eval_ruby" not in names
             report["tests"].append({"name": "normal_mode_eval_lock", "status": "PASS" if eval_hidden else "FAIL", "exposed": not eval_hidden})
 
-            provider_probe = parse(await session.call_tool("ai_dg_9router_test", {"model": "not-sent"}))
-            provider_ok = provider_probe.get("status") == "blocked" and provider_probe.get("request_count") == 0
-            report["tests"].append({"name": "provider_network_guard", "status": "PASS" if provider_ok else "FAIL", "error": provider_probe.get("error"), "request_count": provider_probe.get("request_count")})
-
-            model_sync_probe = parse(await session.call_tool("ai_dg_9router_sync_models", {}))
-            model_sync_ok = model_sync_probe.get("status") == "blocked" and model_sync_probe.get("request_count") == 0
-            report["tests"].append({"name": "model_sync_network_guard", "status": "PASS" if model_sync_ok else "FAIL", "error": model_sync_probe.get("error"), "request_count": model_sync_probe.get("request_count")})
-
-            provider_status_probe = parse(await session.call_tool("ai_dg_provider_status", {}))
-            provider_manager_ok = (
-                provider_status_probe.get("adapter_status") in {"UNCONFIGURED", "OFFLINE", "CONNECTED", "AUTH_ERROR", "RATE_LIMITED", "NO_CREDIT", "MODEL_ERROR"}
-                and "api_key" not in provider_status_probe
-                and "authorization" not in provider_status_probe
-            )
-            report["tests"].append({"name": "provider_manager_redacted_status", "status": "PASS" if provider_manager_ok else "FAIL", "adapter_status": provider_status_probe.get("adapter_status"), "credential_present": provider_status_probe.get("credential_present")})
-
             pipeline_probe = parse(await session.call_tool("ai_dg_pipeline_artifacts", {"run_id": "prompt-20260903-03", "artifact": "summary", "project_path": "E:\\AI-DG"}))
             pipeline_data = pipeline_probe.get("data", {})
             pipeline_ok = pipeline_probe.get("status") == "ok" and pipeline_data.get("run_id") == "prompt-20260903-03" and pipeline_data.get("gate_status") == "BLOCKED"
@@ -129,22 +114,6 @@ async def main() -> int:
             pipeline_guard = parse(await session.call_tool("ai_dg_pipeline_run", {"project_path": "D:\\AI-DG", "run_id": "should-not-write"}))
             pipeline_guard_ok = pipeline_guard.get("error") == "PROTECTED_DRIVE_WRITE_DENIED"
             report["tests"].append({"name": "pipeline_protected_drive_guard", "status": "PASS" if pipeline_guard_ok else "FAIL", "error": pipeline_guard.get("error")})
-
-            invalid_model = parse(await session.call_tool("ai_dg_model_select", {"model": "invalid model id"}))
-            model_guard_ok = invalid_model.get("status") == "error" and invalid_model.get("error") == "INVALID_MODEL_ID"
-            report["tests"].append({"name": "model_selection_guard", "status": "PASS" if model_guard_ok else "FAIL", "error": invalid_model.get("error")})
-
-            prior_model = parse(await session.call_tool("ai_dg_model_status", {})).get("configured_model") or ""
-            selected = parse(await session.call_tool("ai_dg_model_select", {"model": "9router/acceptance-model"}))
-            selected_status = parse(await session.call_tool("ai_dg_model_status", {}))
-            restored = parse(await session.call_tool("ai_dg_model_select", {"model": prior_model}))
-            model_select_ok = (
-                selected.get("status") == "ok"
-                and selected.get("mode") == "MANUAL"
-                and selected_status.get("configured_model") == "9router/acceptance-model"
-                and restored.get("status") == "ok"
-            )
-            report["tests"].append({"name": "model_selection_persistence", "status": "PASS" if model_select_ok else "FAIL", "restored_model": prior_model or "AUTO"})
 
             plugin_catalog = parse(await session.call_tool("ai_dg_list_plugins", {}))
             test_plugin = next((row for row in plugin_catalog.get("plugins", []) if row.get("id") == "ai-dg-test"), None)
@@ -161,17 +130,6 @@ async def main() -> int:
                 and restore.get("status") == "ok"
             )
             report["tests"].append({"name": "plugin_enable_disable_reload", "status": "PASS" if plugin_ok else "FAIL", "plugin": "ai-dg-test", "restored_enabled": initial_enabled})
-
-            session_id = "acceptance-smoke-session"
-            messages = [{"role": "user", "content": "session persistence probe"}, {"role": "assistant", "content": "local only"}]
-            saved = parse(await session.call_tool("ai_dg_session_save", {"session_id": session_id, "messages_json": json.dumps(messages, ensure_ascii=False)}))
-            loaded = parse(await session.call_tool("ai_dg_session_load", {"session_id": session_id}))
-            session_ok = saved.get("status") == "ok" and loaded.get("found") is True and loaded.get("messages") == messages
-            report["tests"].append({"name": "session_persistence", "status": "PASS" if session_ok else "FAIL", "message_count": len(loaded.get("messages", [])), "path": saved.get("path")})
-
-            agent = parse(await session.call_tool("ai_dg_agent_ask", {"prompt": "Phân tích kích thước component đang chọn."}))
-            agent_ok = agent.get("status") == "blocked" and agent.get("error") == "REAL_PROVIDER_REQUIRED" and agent.get("agent") == "NOT_CONFIGURED"
-            report["tests"].append({"name": "real_agent_no_fake_fallback", "status": "PASS" if agent_ok else "FAIL", "provider_status": agent.get("provider_status"), "error": agent.get("error")})
 
             write_probe = parse(await session.call_tool("aidg_write_text_guarded", {"path": r"D:\AI-DG-SAFETY-PROBE.txt", "content": "must be denied"}))
             delete_probe = parse(await session.call_tool("aidg_delete_file_guarded", {"path": r"E:\AI-DG\OUTPUT\safety_probe.skp"}))

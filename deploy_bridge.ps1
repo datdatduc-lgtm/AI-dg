@@ -13,12 +13,15 @@ $files = @(
     @{ Source = Join-Path $source 'ai_dg_bridge\geometry_builder.rb'; Destination = Join-Path $destination 'geometry_builder.rb' },
     @{ Source = Join-Path $source 'ai_dg_bridge\toolbar.rb'; Destination = Join-Path $destination 'toolbar.rb' },
     @{ Source = Join-Path $source 'ai_dg_bridge\control_center.rb'; Destination = Join-Path $destination 'control_center.rb' },
+    @{ Source = Join-Path $source 'ai_dg_bridge\agent_host_client.rb'; Destination = Join-Path $destination 'agent_host_client.rb' },
     @{ Source = Join-Path $source 'ai_dg_bridge\helper_process.rb'; Destination = Join-Path $destination 'helper_process.rb' },
+    @{ Source = Join-Path $PSScriptRoot 'agent_host\host.py'; Destination = Join-Path $destination 'agent_host\host.py' },
     @{ Source = Join-Path $source 'ai_dg_bridge\icons\ai_dg_mcp.svg'; Destination = Join-Path $destination 'icons\ai_dg_mcp.svg' }
 )
 
 New-Item -ItemType Directory -Path $destination -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $destination 'icons') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $destination 'agent_host') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $destination 'ui') -Force | Out-Null
 $uiFiles = @('control_center.html', 'control_center.css', 'control_center.js')
 foreach ($uiFile in $uiFiles) {

@@ -68,12 +68,22 @@ async def main() -> int:
             }
             exposure = parse(await session.call_tool("ai_dg_list_tools", {}))
             exposure_state = exposure.get("exposure", {})
+            legacy_tools = {
+                "ai_dg_agent_ask",
+                "ai_dg_model_status",
+                "ai_dg_model_select",
+                "ai_dg_9router_sync_models",
+                "ai_dg_provider_status",
+                "ai_dg_provider_configure",
+                "ai_dg_provider_disconnect",
+                "ai_dg_9router_test",
+            }
             minimal_exposure_ok = (
                 exposure_state.get("profile") == "minimal"
                 and exposure_state.get("exposed_tool_count") == len(tools)
                 and exposure_state.get("all_tool_count", 0) > len(tools)
                 and "sketchup_create_cabinet" not in tools
-                and "ai_dg_provider_configure" not in tools
+                and not tools.intersection(legacy_tools)
             )
             health = parse(await session.call_tool("sketchup_health", {}))
             selection = parse(await session.call_tool("sketchup_get_selection", {}))
@@ -99,6 +109,7 @@ async def main() -> int:
                         "all_tool_count": exposure_state.get("all_tool_count"),
                         "profile": exposure_state.get("profile"),
                         "schema_reduction_percent": exposure_state.get("schema_reduction_percent"),
+                        "legacy_tools": sorted(tools.intersection(legacy_tools)),
                         "health": {
                             "bridge": health.get("data", {}).get("bridge_status"),
                             "sketchup_version": health.get("data", {}).get("sketchup_version"),

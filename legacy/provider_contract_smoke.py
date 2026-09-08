@@ -1,3 +1,4 @@
+# Archived migration reference; not imported by the production runtime.
 #!/usr/bin/env python3
 """Local contract test for the 9Router adapter; no external network is used."""
 

@@ -10,10 +10,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from mcp.server.fastmcp import FastMCP
 
-from policy import delete_guard, provider_config_summary, write_guard
-from provider import _content_text as provider_content_text, chat_completion as provider_chat_completion, configure_provider as provider_configure, disconnect_provider as provider_disconnect, model_status as provider_model_status, status as provider_adapter_status, sync_models as provider_sync_models, test_chat as provider_test_chat
+from policy import delete_guard, write_guard
 from registries import list_plugins, list_skills, load_skill, plugin_diagnostics, reload_plugin, set_plugin_enabled
-from session_store import load_session, save_session
 from sketchup_analyzer import analyze_file
 from logging_utils import ensure_log_files, log_event
 from workflow_profile import build_profile
@@ -30,36 +28,6 @@ ROOT_DIR = Path("E:/AI-DG")
 DEVELOPER_MODE = os.environ.get("AI_DG_DEVELOPER_MODE", "0") == "1"
 SESSION_ID = os.environ.get("AI_DG_SESSION_ID", f"mcp-session-{uuid.uuid4()}")
 DEFAULT_BRIDGE_TIMEOUT = 15.0
-ALLOW_PROVIDER_TEST = os.environ.get("AI_DG_ALLOW_PROVIDER_TEST", "0") == "1"
-ENABLE_PROVIDER_AGENT = os.environ.get("AI_DG_ENABLE_PROVIDER_AGENT", "0") == "1"
-
-READONLY_AGENT_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "sketchup_get_model_summary",
-            "description": "Read the current SketchUp model summary without changing it.",
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "sketchup_get_selection",
-            "description": "Read the current SketchUp selection metadata without changing it.",
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "sketchup_get_camera",
-            "description": "Read the current SketchUp camera metadata without changing it.",
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-    },
-]
-
 TOOL_REGISTRY = [
     {"id": "sketchup_ping", "permission": "sketchup.read", "risk": "LOW"},
     {"id": "sketchup_health", "permission": "sketchup.read", "risk": "LOW"},
@@ -82,9 +50,6 @@ TOOL_REGISTRY = [
     {"id": "sketchup_list_runtime_skills", "permission": "runtime.read", "risk": "LOW"},
     {"id": "sketchup_list_runtime_plugins", "permission": "runtime.read", "risk": "LOW"},
     {"id": "ai_dg_runtime_status", "permission": "runtime.read", "risk": "LOW"},
-    {"id": "ai_dg_model_status", "permission": "provider.read", "risk": "LOW"},
-    {"id": "ai_dg_model_select", "permission": "provider.write", "risk": "MEDIUM"},
-    {"id": "ai_dg_9router_sync_models", "permission": "provider.network", "risk": "HIGH"},
     {"id": "ai_dg_build_workflow_profile", "permission": "filesystem.write", "risk": "MEDIUM"},
     {"id": "ai_dg_source_ingest", "permission": "filesystem.write", "risk": "MEDIUM"},
     {"id": "ai_dg_pipeline_run", "permission": "filesystem.write", "risk": "MEDIUM"},
@@ -97,9 +62,6 @@ TOOL_REGISTRY = [
     {"id": "ai_dg_execute_build_plan", "permission": "sketchup.write", "risk": "HIGH"},
     {"id": "ai_dg_verification", "permission": "filesystem.read", "risk": "LOW"},
     {"id": "ai_dg_list_tools", "permission": "runtime.read", "risk": "LOW"},
-    {"id": "ai_dg_provider_status", "permission": "provider.read", "risk": "LOW"},
-    {"id": "ai_dg_provider_configure", "permission": "provider.write", "risk": "HIGH"},
-    {"id": "ai_dg_provider_disconnect", "permission": "provider.write", "risk": "HIGH"},
     {"id": "sketchup_capture_viewport", "permission": "filesystem.write", "risk": "MEDIUM"},
     {"id": "sketchup_create_box", "permission": "sketchup.write", "risk": "MEDIUM"},
     {"id": "sketchup_get_semantic_item", "permission": "sketchup.read", "risk": "LOW"},
@@ -119,7 +81,6 @@ TOOL_REGISTRY = [
     {"id": "sketchup_set_tag", "permission": "sketchup.write", "risk": "MEDIUM"},
     {"id": "sketchup_undo", "permission": "sketchup.write", "risk": "HIGH"},
     {"id": "sketchup_eval_ruby", "permission": "developer.only", "risk": "HIGH"},
-    {"id": "ai_dg_9router_test", "permission": "provider.network", "risk": "HIGH"},
     {"id": "ai_dg_list_skills", "permission": "filesystem.read", "risk": "LOW"},
     {"id": "ai_dg_load_skill", "permission": "filesystem.read", "risk": "LOW"},
     {"id": "ai_dg_list_plugins", "permission": "filesystem.read", "risk": "LOW"},
@@ -128,9 +89,6 @@ TOOL_REGISTRY = [
     {"id": "ai_dg_plugin_diagnostics", "permission": "filesystem.read", "risk": "LOW"},
     {"id": "ai_dg_test_read_tool", "permission": "sketchup.read", "risk": "LOW"},
     {"id": "aidg_analyze_skp_readonly", "permission": "filesystem.read", "risk": "LOW"},
-    {"id": "ai_dg_session_save", "permission": "filesystem.write", "risk": "LOW"},
-    {"id": "ai_dg_session_load", "permission": "filesystem.read", "risk": "LOW"},
-    {"id": "ai_dg_agent_ask", "permission": "agent.local", "risk": "LOW"},
     {"id": "aidg_write_text_guarded", "permission": "filesystem.write", "risk": "MEDIUM"},
     {"id": "aidg_delete_file_guarded", "permission": "filesystem.delete", "risk": "HIGH"},
     {"id": "aidg_prepare_run", "permission": "filesystem.write", "risk": "MEDIUM"},
@@ -388,45 +346,6 @@ def ai_dg_runtime_status() -> str:
         "error": result.get("error"),
     }
     return json.dumps(result, ensure_ascii=False)
-
-
-@mcp.tool()
-def ai_dg_model_status() -> str:
-    """Read model-manager configuration without a network/model-list call."""
-    return json.dumps(provider_model_status(), indent=2, ensure_ascii=False)
-
-
-@mcp.tool()
-def ai_dg_model_select(model: str = "") -> str:
-    """Persist AUTO or a canonical provider/model identifier locally."""
-    normalized = model.strip()
-    if normalized and (len(normalized) > 200 or not __import__("re").fullmatch(r"[A-Za-z0-9._:/-]+", normalized)):
-        return json.dumps({"status": "error", "error": "INVALID_MODEL_ID"}, ensure_ascii=False)
-    path = ROOT_DIR / "OUTPUT" / "runtime" / "model-state.json"
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({
-            "model": normalized,
-            "mode": "MANUAL" if normalized else "AUTO",
-            "updated_utc": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
-        }, ensure_ascii=False, indent=2), encoding="utf-8")
-        log_event("runtime", "model_changed", mode="MANUAL" if normalized else "AUTO", model=normalized or "AUTO")
-        return json.dumps({"status": "ok", "model": normalized or "AUTO", "mode": "MANUAL" if normalized else "AUTO", "path": str(path)}, ensure_ascii=False)
-    except OSError as exc:
-        return json.dumps({"status": "error", "error": "MODEL_STATE_WRITE_FAILED", "detail": exc.__class__.__name__}, ensure_ascii=False)
-
-
-@mcp.tool()
-def ai_dg_9router_sync_models() -> str:
-    """Make one explicit bounded /models request; no background sync or retry."""
-    if not ALLOW_PROVIDER_TEST:
-        return json.dumps({
-            "status": "blocked",
-            "error": "PROVIDER_NETWORK_TEST_REQUIRES_EXPLICIT_ENABLE",
-            "hint": "Set AI_DG_ALLOW_PROVIDER_TEST=1 before starting this MCP server.",
-            "request_count": 0,
-        }, ensure_ascii=False)
-    return json.dumps(provider_sync_models(), indent=2, ensure_ascii=False)
 
 
 @mcp.tool()
@@ -699,78 +618,6 @@ def ai_dg_list_tools() -> str:
 
 
 @mcp.tool()
-def ai_dg_provider_status() -> str:
-    summary = provider_config_summary()
-    adapter = provider_adapter_status()
-    summary.update({
-        "provider": adapter.get("provider", summary.get("provider")),
-        "provider_type": adapter.get("provider_type", "9router"),
-        "config_path": adapter.get("config_path", summary.get("config_path")),
-        "manager_config_path": adapter.get("manager_config_path"),
-        "config_exists": bool(adapter.get("configuration_present")),
-        "credential_present": adapter.get("credential_present", False),
-        "credential_length": adapter.get("credential_length", 0),
-        "network_test": adapter.get("network_test", "NOT_RUN"),
-        "adapter_status": adapter.get("status", "UNCONFIGURED"),
-        "configured_model": adapter.get("configured_model"),
-        "enabled": adapter.get("enabled", False),
-        "network_test_permission": "ENABLED" if ALLOW_PROVIDER_TEST else "REQUIRES_EXPLICIT_ENABLE",
-        "model_sync_permission": "ENABLED" if ALLOW_PROVIDER_TEST else "REQUIRES_EXPLICIT_ENABLE",
-        "provider_agent_permission": "ENABLED" if (ALLOW_PROVIDER_TEST and ENABLE_PROVIDER_AGENT) else "REQUIRES_EXPLICIT_ENABLE",
-        "model_catalog_source": provider_model_status().get("models_source", "NOT_QUERIED"),
-    })
-    return json.dumps(summary, indent=2, ensure_ascii=False)
-
-
-@mcp.tool()
-def ai_dg_provider_configure(
-    provider_name: str,
-    provider_type: str,
-    base_url: str,
-    model_id: str = "",
-    api_key: str = "",
-    enabled: bool = True,
-) -> str:
-    """Configure a provider; metadata is local and the key goes to the OS secret store."""
-    try:
-        result = provider_configure(
-            provider_name=provider_name,
-            provider_type=provider_type,
-            base_url=base_url,
-            model_id=model_id,
-            api_key=api_key,
-            enabled=enabled,
-        )
-        log_event("provider", "configuration_changed", status=result.get("status"), provider=provider_name.strip()[:100])
-        return json.dumps(result, ensure_ascii=False)
-    except ValueError as exc:
-        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
-    except Exception as exc:
-        return json.dumps({"status": "error", "error": "PROVIDER_CONFIGURE_FAILED", "detail": exc.__class__.__name__}, ensure_ascii=False)
-
-
-@mcp.tool()
-def ai_dg_provider_disconnect() -> str:
-    """Disable the configured provider and remove its OS-stored secret."""
-    result = provider_disconnect()
-    log_event("provider", "configuration_disconnected", status=result.get("status"), credential_removed=result.get("credential_removed"))
-    return json.dumps(result, ensure_ascii=False)
-
-
-@mcp.tool()
-def ai_dg_9router_test(model: str, prompt: str = "Trả lời duy nhất: OK") -> str:
-    """Perform one explicit, bounded 9Router request; never retries automatically."""
-    if not ALLOW_PROVIDER_TEST:
-        return json.dumps({
-            "status": "blocked",
-            "error": "PROVIDER_NETWORK_TEST_REQUIRES_EXPLICIT_ENABLE",
-            "hint": "Set AI_DG_ALLOW_PROVIDER_TEST=1 before starting this MCP server.",
-            "request_count": 0,
-        }, ensure_ascii=False)
-    return json.dumps(provider_test_chat(model=model, prompt=prompt), indent=2, ensure_ascii=False)
-
-
-@mcp.tool()
 def ai_dg_list_skills() -> str:
     """List skill metadata only; SKILL.md bodies are loaded on demand."""
     return json.dumps({"status": "ok", "lazy": True, "skills": list_skills()}, indent=2, ensure_ascii=False)
@@ -815,117 +662,6 @@ def ai_dg_test_read_tool() -> str:
 def aidg_analyze_skp_readonly(path: str) -> str:
     return json.dumps(analyze_file(path), indent=2, ensure_ascii=False)
 
-
-@mcp.tool()
-def ai_dg_session_save(session_id: str, messages_json: str) -> str:
-    try:
-        messages = json.loads(messages_json)
-        if not isinstance(messages, list):
-            raise ValueError("messages_json must be a list")
-        return json.dumps(save_session(session_id, messages), indent=2, ensure_ascii=False)
-    except (ValueError, TypeError, json.JSONDecodeError) as exc:
-        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
-
-
-@mcp.tool()
-def ai_dg_session_load(session_id: str) -> str:
-    try:
-        return json.dumps(load_session(session_id), indent=2, ensure_ascii=False)
-    except (ValueError, OSError, json.JSONDecodeError) as exc:
-        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
-
-
-@mcp.tool()
-def ai_dg_agent_ask(prompt: str) -> str:
-    """Run the bounded real-provider agent; never fall back to scripted chat."""
-    if ENABLE_PROVIDER_AGENT:
-        if not ALLOW_PROVIDER_TEST:
-            return json.dumps({"status": "blocked", "error": "PROVIDER_NETWORK_TEST_REQUIRES_EXPLICIT_ENABLE", "max_steps": 2, "max_tool_calls": 1}, ensure_ascii=False)
-        return json.dumps(_provider_agent_ask(prompt), ensure_ascii=False)
-
-    request_id = f"agent-{uuid.uuid4()}"
-    provider_status = provider_adapter_status().get("status", "OFFLINE")
-    log_event("agent", "agent_blocked", request_id=request_id, status="BLOCKED", provider_status=provider_status, reason="REAL_PROVIDER_REQUIRED")
-    return json.dumps({
-        "status": "blocked",
-        "request_id": request_id,
-        "agent": "NOT_CONFIGURED",
-        "provider_status": provider_status,
-        "error": "REAL_PROVIDER_REQUIRED",
-        "message": "AI-DG không dùng fallback trả lời cố định; hãy cấu hình và test provider thật trước.",
-        "steps": [],
-        "tool_calls": 0,
-        "max_steps": 2,
-        "max_tool_calls": 1,
-    }, ensure_ascii=False)
-
-
-def _provider_agent_ask(prompt: str) -> dict[str, Any]:
-    """Bounded provider-backed agent loop; only read-only SketchUp tools are callable."""
-    request_id = f"provider-agent-{uuid.uuid4()}"
-    model = (provider_model_status().get("configured_model") or os.environ.get("AI_DG_MODEL", "")).strip()
-    if not model:
-        return {"status": "blocked", "error": "MODEL_REQUIRED", "request_id": request_id, "max_steps": 2, "max_tool_calls": 1}
-    messages: list[dict[str, Any]] = [
-        {
-            "role": "system",
-            "content": "Bạn là AI-DG agent trong SketchUp. Chỉ đọc metadata bằng các tool được cung cấp; không được sửa model, xóa file, ghi ổ D: hoặc thực thi Ruby. Trả lời ngắn gọn, nêu rõ khi dữ liệu không đủ.",
-        },
-        {"role": "user", "content": prompt[:4000]},
-    ]
-    log_event("agent", "provider_agent_started", request_id=request_id, model=model, max_steps=2, max_tool_calls=1)
-    first = provider_chat_completion(model=model, messages=messages, tools=READONLY_AGENT_TOOLS, max_tokens=512, timeout=20.0)
-    if first.get("status") != "ok":
-        log_event("agent", "provider_agent_finished", request_id=request_id, status="ERROR", error=first.get("error"), request_count=first.get("request_count", 0))
-        return {"status": "error", "error": first.get("error", "PROVIDER_UNAVAILABLE"), "request_id": request_id, "provider": "9Router", "model": model, "request_count": first.get("request_count", 0), "max_steps": 2, "max_tool_calls": 1}
-
-    first_message = first.get("message") if isinstance(first.get("message"), dict) else {}
-    tool_calls = first_message.get("tool_calls") if isinstance(first_message.get("tool_calls"), list) else []
-    steps = [{"step": "provider_completion", "status": "SUCCESS"}]
-    usage = dict(first.get("usage") or {})
-    request_count = int(first.get("request_count", 0) or 0)
-    if not tool_calls:
-        answer = provider_content_text(first_message.get("content"))[:4000]
-        log_event("agent", "provider_agent_finished", request_id=request_id, status="SUCCESS", request_count=request_count, tool_calls=0)
-        return {"status": "ok", "request_id": request_id, "agent": "provider-bounded", "provider": "9Router", "model": model, "answer": answer, "steps": steps, "tool_calls": 0, "request_count": request_count, "usage": usage, "max_steps": 2, "max_tool_calls": 1}
-
-    if len(tool_calls) != 1:
-        return {"status": "blocked", "error": "AGENT_TOOL_CALL_LIMIT", "request_id": request_id, "provider": "9Router", "model": model, "request_count": request_count, "max_steps": 2, "max_tool_calls": 1}
-    call = tool_calls[0] if isinstance(tool_calls[0], dict) else {}
-    function = call.get("function") if isinstance(call.get("function"), dict) else {}
-    tool_name = str(function.get("name") or "")
-    if tool_name not in {"sketchup_get_model_summary", "sketchup_get_selection", "sketchup_get_camera"}:
-        return {"status": "blocked", "error": "AGENT_TOOL_NOT_ALLOWED", "tool": tool_name, "request_id": request_id, "provider": "9Router", "model": model, "request_count": request_count, "max_steps": 2, "max_tool_calls": 1}
-    try:
-        arguments = json.loads(function.get("arguments") or "{}")
-    except json.JSONDecodeError:
-        arguments = {}
-    if not isinstance(arguments, dict):
-        arguments = {}
-    if arguments:
-        return {"status": "blocked", "error": "AGENT_TOOL_ARGUMENTS_NOT_ALLOWED", "tool": tool_name, "request_id": request_id, "provider": "9Router", "model": model, "request_count": request_count, "max_steps": 2, "max_tool_calls": 1}
-    tool_result = {
-        "sketchup_get_model_summary": sketchup_get_model_summary,
-        "sketchup_get_selection": sketchup_get_selection,
-        "sketchup_get_camera": sketchup_get_camera,
-    }[tool_name](**arguments)
-    steps.append({"step": "read_tool", "tool": tool_name, "status": "SUCCESS"})
-    messages.extend([
-        {"role": "assistant", "content": first_message.get("content"), "tool_calls": tool_calls},
-        {"role": "tool", "tool_call_id": str(call.get("id") or "tool-call-1"), "name": tool_name, "content": str(tool_result)[:12000]},
-    ])
-    second = provider_chat_completion(model=model, messages=messages, max_tokens=512, timeout=20.0)
-    request_count += int(second.get("request_count", 0) or 0)
-    for key, value in (second.get("usage") or {}).items():
-        if isinstance(value, (int, float)):
-            usage[key] = usage.get(key, 0) + value
-    if second.get("status") != "ok":
-        log_event("agent", "provider_agent_finished", request_id=request_id, status="ERROR", error=second.get("error"), request_count=request_count, tool_calls=1)
-        return {"status": "error", "error": second.get("error", "PROVIDER_UNAVAILABLE"), "request_id": request_id, "provider": "9Router", "model": model, "tool": tool_name, "request_count": request_count, "usage": usage, "steps": steps, "max_steps": 2, "max_tool_calls": 1}
-    second_message = second.get("message") if isinstance(second.get("message"), dict) else {}
-    answer = provider_content_text(second_message.get("content"))[:4000]
-    log_event("agent", "provider_agent_finished", request_id=request_id, status="SUCCESS", request_count=request_count, tool_calls=1)
-    return {"status": "ok", "request_id": request_id, "agent": "provider-bounded", "provider": "9Router", "model": model, "answer": answer, "tool": tool_name, "steps": steps, "tool_calls": 1, "request_count": request_count, "usage": usage, "max_steps": 2, "max_tool_calls": 1}
 
 @mcp.tool()
 def sketchup_capture_viewport(output_image_path: str, view_mode: str = "iso") -> str:

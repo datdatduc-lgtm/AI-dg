@@ -1,3 +1,4 @@
+# Archived migration reference; not imported by the production runtime.
 """E: local session persistence with no provider-secret fields."""
 
 from __future__ import annotations

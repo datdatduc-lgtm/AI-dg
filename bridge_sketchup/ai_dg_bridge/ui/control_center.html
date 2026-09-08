@@ -3,73 +3,74 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI-DG MCP-SU Control Center</title>
+  <title>AI-DG SketchUp Workspace</title>
   <link rel="stylesheet" href="control_center.css">
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><div class="brand-mark">AI</div><div><strong>AI-DG</strong><small>MCP-SU Control Center</small></div></div>
-      <div class="mode-box"><span>Chế độ</span><strong id="mode-badge">READ ONLY</strong><button id="mode-toggle" class="secondary">Bật ghi model</button></div>
+      <div class="brand"><div class="brand-mark">AI</div><div><strong>AI-DG</strong><small>SketchUp Workspace</small></div></div>
+      <div class="mode-box"><span>Quyền model</span><strong id="mode-badge">READ ONLY</strong><button id="mode-toggle" class="secondary">Bật ghi model</button></div>
       <nav id="tabs" aria-label="Điều hướng">
-        <button class="tab active" data-tab="runtime">Runtime</button>
-        <button class="tab user-tab" data-tab="sources">Nguồn 2D</button>
-        <button class="tab user-tab" data-tab="review">Review Queue</button>
-        <button class="tab user-tab" data-tab="build">Tiến độ dựng</button>
-        <button class="tab" data-tab="flow">Luồng dữ liệu</button>
-        <button class="tab" data-tab="sequence">Sequence</button>
-        <button class="tab" data-tab="tool-calls">Tool Calls</button>
-        <button class="tab" data-tab="agent-steps">Agent Steps</button>
-        <button class="tab" data-tab="errors">Errors</button>
-        <button class="tab" data-tab="tools">Công cụ</button>
-        <button class="tab" data-tab="skills">Kỹ năng</button>
-        <button class="tab" data-tab="plugins">Plugins</button>
-        <button class="tab" data-tab="model">Model Inspector</button>
-        <button class="tab" data-tab="chat">Chat / Agent</button>
+        <button class="tab active" data-tab="codex">Codex</button>
+        <button class="tab" data-tab="cline">Cline</button>
+        <button class="tab" data-tab="drawings">Bản vẽ</button>
+        <button class="tab" data-tab="build">Dựng model</button>
         <button class="tab" data-tab="settings">Cài đặt</button>
-        <button class="tab" data-tab="developer">Developer</button>
-        <button class="tab" data-tab="logs">Logs</button>
+        <button class="tab developer-only" data-tab="developer" hidden>Developer Diagnostics</button>
       </nav>
-      <div class="sidebar-foot"><span class="dot online"></span><span id="footer-status">Đang kết nối bridge</span></div>
+      <div class="sidebar-foot"><span id="footer-dot" class="dot"></span><span id="footer-status">Đang kết nối bridge</span></div>
     </aside>
+
     <main class="content">
-      <section class="panel active" id="panel-runtime">
-        <div class="page-head"><div><h1>AI-DG Runtime</h1><p>Theo dõi realtime từ SketchUp Ruby API đến MCP.</p></div><button id="refresh-runtime" class="secondary">Làm mới</button></div>
-        <div class="card-grid" id="runtime-cards"></div>
-        <div class="two-col"><article class="card"><h2>Task hiện tại</h2><div id="task-summary" class="empty">Chưa có task agent.</div></article><article class="card"><h2>Hàng đợi & độ trễ</h2><div id="queue-summary" class="metric-list"></div></article></div>
-        <article class="card"><h2>Trạng thái hệ thống</h2><div id="runtime-health" class="health-list"></div></article>
+      <section class="panel active" id="panel-codex" data-backend="codex">
+        <div class="page-head"><div><h1>Codex</h1><p>Codex thật đang làm việc với SketchUp qua MCP.</p></div><div class="head-actions"><span id="codex-state" class="status-pill">Đang kết nối</span><button class="secondary" data-agent-open="codex">Mở session</button></div></div>
+        <article class="card chat-card">
+          <div class="chat-toolbar"><div><span class="chat-chip">CODEX APP SERVER</span><span id="codex-model" class="chat-chip">Model: —</span><span id="codex-session" class="chat-chip muted">Session: —</span></div><button class="secondary" data-agent-resume="codex">Resume</button></div>
+          <div id="codex-readiness" class="notice">Đang kiểm tra Codex App Server…</div>
+          <div id="codex-history" class="chat-history"><div class="chat-msg system"><div class="chat-body">Mở session để bắt đầu. Codex sẽ đọc SketchUp bằng AI-DG MCP khi cần.</div><div class="chat-meta">AI-DG</div></div></div>
+          <div class="chat-input"><textarea id="codex-text" rows="3" placeholder="Ví dụ: đọc object đang chọn trong SketchUp…"></textarea><div class="chat-input-footer"><span>Enter gửi · Shift+Enter xuống dòng</span><div><button class="secondary" data-agent-cancel="codex">Dừng</button><button class="primary" data-agent-send="codex">Gửi</button></div></div></div>
+        </article>
       </section>
 
-      <section class="panel" id="panel-sources">
-        <div class="page-head"><div><h1>Nguồn bản vẽ</h1><p>Trạng thái ingestion/index/reconciliation từ artifact thật trong WORK/pipeline.</p></div><button id="refresh-pipeline-sources" class="secondary">Cập nhật</button></div>
-        <div class="card-grid" id="pipeline-source-cards"></div>
-        <article class="card"><h2>Run gần nhất</h2><pre id="pipeline-source-data" class="json-box">Chưa đọc pipeline.</pre></article>
+      <section class="panel" id="panel-cline" data-backend="cline">
+        <div class="page-head"><div><h1>Cline</h1><p>Cline CLI thật chạy qua Agent Client Protocol.</p></div><div class="head-actions"><span id="cline-state" class="status-pill">Đang kiểm tra</span><button class="secondary" data-agent-open="cline">Mở session</button></div></div>
+        <article class="card chat-card">
+          <div class="chat-toolbar"><div><span class="chat-chip">CLINE ACP</span><span id="cline-model" class="chat-chip">Model: Cline tự quản lý</span><span id="cline-session" class="chat-chip muted">Session: —</span></div><button class="secondary" data-agent-resume="cline">Resume</button></div>
+          <div id="cline-readiness" class="notice">Đang kiểm tra Cline CLI…</div>
+          <div id="cline-history" class="chat-history"><div class="chat-msg system"><div class="chat-body">Cline tự quản lý đăng nhập và mô hình.</div><div class="chat-meta">AI-DG</div></div></div>
+          <div class="chat-input"><textarea id="cline-text" rows="3" placeholder="Yêu cầu Cline kiểm tra hoặc thực hiện công việc…"></textarea><div class="chat-input-footer"><span>Plan mặc định · thao tác ghi cần approval</span><div><button class="secondary" data-agent-cancel="cline">Dừng</button><button class="primary" data-agent-send="cline">Gửi</button></div></div></div>
+        </article>
       </section>
 
-      <section class="panel" id="panel-review">
-        <div class="page-head"><div><h1>Review Queue</h1><p>Fact thiếu/conflict/inferred không được tự động phê duyệt.</p></div><button id="refresh-pipeline-review" class="secondary">Cập nhật</button></div>
-        <article class="card"><div id="pipeline-review-list" class="trace-list"><div class="empty">Chưa đọc review queue.</div></div></article>
+      <section class="panel" id="panel-drawings">
+        <div class="page-head"><div><h1>Bản vẽ</h1><p>Quản lý thư mục dự án và trạng thái pipeline AI-DG.</p></div><div class="head-actions"><button id="source-select" class="primary">Chọn thư mục</button><button id="source-refresh" class="secondary">Cập nhật</button></div></div>
+        <div class="card-grid" id="drawing-cards"></div>
+        <article class="card"><h2>Thư mục dự án / bản vẽ</h2><pre id="source-data" class="json-box">Chưa chọn thư mục.</pre></article>
+        <article class="card"><h2>Run gần nhất</h2><pre id="pipeline-data" class="json-box">Chưa đọc pipeline.</pre></article>
       </section>
 
       <section class="panel" id="panel-build">
-        <div class="page-head"><div><h1>Tiến độ dựng</h1><p>Chỉ READY + APPROVED mới có semantic build operations.</p></div><button id="refresh-pipeline-build" class="secondary">Cập nhật</button></div>
-        <div class="card-grid" id="pipeline-build-cards"></div>
-        <article class="card"><h2>Operations / blockers</h2><div id="pipeline-build-list" class="trace-list"><div class="empty">Chưa có build plan.</div></div></article>
+        <div class="page-head"><div><h1>Dựng model</h1><p>Chỉ thực hiện build sau khi dữ liệu đã qua review và được người dùng cho phép.</p></div><button id="build-refresh" class="secondary">Cập nhật</button></div>
+        <div class="card-grid" id="build-cards"></div>
+        <article class="card"><h2>Operations / blockers</h2><div id="build-list" class="trace-list"><div class="empty">Chưa có build plan.</div></div></article>
       </section>
 
-      <section class="panel" id="panel-flow"><div class="page-head"><div><h1>Luồng dữ liệu</h1><p>Graph trạng thái của request gần nhất. Bấm node hoặc event để xem metadata.</p></div></div><div id="flow-graph" class="flow-graph"></div><article class="card"><h2>Chi tiết edge / trace</h2><div id="flow-details" class="trace-list"></div><pre id="trace-inspector" class="json-box trace-inspector">Chọn một event để xem chi tiết.</pre></article></section>
-      <section class="panel" id="panel-sequence"><div class="page-head"><div><h1>Sequence</h1><p>Trình tự event đã nhận từ runtime.</p></div></div><article class="card"><div id="sequence-list" class="trace-list"></div></article></section>
-      <section class="panel" id="panel-tool-calls"><div class="page-head"><div><h1>Tool Calls</h1><p>Các lần gọi tool, request ID, trạng thái và latency.</p></div></div><article class="card"><div id="tool-calls-list" class="trace-list"></div></article></section>
-      <section class="panel" id="panel-agent-steps"><div class="page-head"><div><h1>Agent Steps</h1><p>Các bước agent đã được runtime ghi nhận.</p></div></div><article class="card"><div id="agent-steps-list" class="trace-list"></div></article></section>
-      <section class="panel" id="panel-errors"><div class="page-head"><div><h1>Errors</h1><p>Lỗi, timeout và cảnh báo gần nhất.</p></div></div><article class="card"><div id="errors-list" class="trace-list"></div></article></section>
-      <section class="panel" id="panel-tools"><div class="page-head"><div><h1>Công cụ</h1><p>Tool registry và quyền hiện tại.</p></div></div><article class="card"><div id="tool-list" class="table-wrap"></div></article></section>
-      <section class="panel" id="panel-skills"><div class="page-head"><div><h1>Kỹ năng</h1><p>Skill metadata được nạp lazy; không inject toàn catalog vào prompt.</p></div><button id="refresh-skills" class="secondary">Làm mới</button></div><article class="card"><div id="skill-list" class="table-wrap"></div></article><article class="card"><h2>Skill đã nạp</h2><pre id="skill-details" class="json-box">Chưa nạp skill.</pre></article></section>
-      <section class="panel" id="panel-plugins"><div class="page-head"><div><h1>Plugins</h1><p>Registry plugin và quyền được cấp.</p></div><div class="head-actions"><button id="plugin-diagnostics" class="secondary">Diagnostics</button><button id="refresh-plugins" class="secondary">Làm mới</button></div></div><article class="card"><div id="plugin-list" class="table-wrap"></div></article><article class="card"><h2>Diagnostics</h2><pre id="plugin-diagnostics-data" class="json-box">Chưa chạy diagnostics.</pre></article></section>
-      <section class="panel" id="panel-model"><div class="page-head"><div><h1>Model Inspector</h1><p>Metadata trước, chi tiết theo nhánh được chọn.</p></div><button id="refresh-model" class="secondary">Đọc model</button></div><div id="model-summary" class="card-grid"></div><div class="two-col"><article class="card"><div class="card-head"><h2>Selection</h2><button id="inspect-selection" class="secondary" disabled>Đọc entity</button></div><div id="selection-data" class="json-box">Chưa đọc.</div><h2 class="subheading">Entity detail</h2><div id="entity-data" class="json-box">Chọn đúng một entity rồi bấm Đọc entity.</div></article><article class="card"><h2>Camera</h2><div id="camera-data" class="json-box">Chưa đọc.</div></article></div><div class="collection-grid"><article class="card"><h2>Hierarchy</h2><div id="hierarchy-data" class="json-box">Chưa đọc.</div></article><article class="card"><h2>Components / Groups</h2><div id="components-data" class="json-box">Chưa đọc.</div></article><article class="card"><h2>Materials</h2><div id="materials-data" class="json-box">Chưa đọc.</div></article><article class="card"><h2>Tags</h2><div id="tags-data" class="json-box">Chưa đọc.</div></article><article class="card"><h2>Scenes</h2><div id="scenes-data" class="json-box">Chưa đọc.</div></article></div></section>
-<section class="panel" id="panel-chat"><div class="page-head"><div><h1>Chat / Agent</h1><p>User Mode chỉ dùng provider/model thật qua MCP; không có fallback trả lời cố định. Developer Mode mới có diagnostic bounded và được đánh dấu DEV_MOCK.</p></div><div class="agent-controls"><span id="agent-state" class="status-muted">IDLE</span><button id="agent-pause" class="secondary">Tạm dừng</button><button id="agent-resume" class="secondary">Tiếp tục</button><button id="agent-cancel" class="secondary">Dừng</button></div></div><article class="card chat-card"><div class="chat-toolbar"><div class="chat-context"><span id="chat-provider-chip" class="chat-chip">PROVIDER: —</span><span id="chat-model-chip" class="chat-chip">MODEL: AUTO</span><span class="chat-chip chat-chip-muted">READ-ONLY TOOLS</span></div><button id="chat-open-settings" class="secondary">Cài đặt provider</button></div><div id="chat-readiness" class="chat-readiness status-warn">Đang kiểm tra provider và model…</div><div id="chat-history" class="chat-history"><div class="chat-msg system"><div class="chat-body">Cấu hình và test provider thật trước khi chat. MCP client có thể đọc model/selection/camera ngay bây giờ.</div><div class="chat-meta">SYSTEM</div></div></div><div class="chat-input"><textarea id="chat-text" rows="3" placeholder="Nhập yêu cầu cho AI-DG…" autocomplete="off"></textarea><div class="chat-input-footer"><span>Enter gửi · Shift+Enter xuống dòng</span><button id="chat-send" class="primary">Gửi</button></div></div></article></section>
-<section class="panel" id="panel-settings"><div class="page-head"><div><h1>Cài đặt</h1><p>Cấu hình an toàn, tiếng Việt mặc định; secret chỉ hiển thị dạng che.</p></div></div><div class="settings-grid"><article class="card"><h2>Chung</h2><div class="setting-row"><span>Ngôn ngữ</span><strong>Tiếng Việt</strong></div><div class="setting-row"><span>Session</span><strong id="settings-session">Chưa khởi tạo</strong></div></article><article class="card"><h2>AI / Agent</h2><div class="setting-row"><span>Agent</span><strong id="settings-agent">Provider-backed only</strong></div><div class="setting-row"><span>Giới hạn</span><strong>2 steps / 1 tool</strong></div><div class="setting-row"><span>Điều khiển</span><strong>Cancel · Pause · Resume</strong></div></article><article class="card"><h2>9Router / Provider</h2><div class="setting-row"><span>Nhà cung cấp</span><strong id="provider-name">Chưa cấu hình</strong></div><div class="setting-row"><span>API key</span><strong>********</strong></div><div class="setting-row"><span>Trạng thái</span><strong id="provider-status">Chưa kiểm tra</strong></div><div class="setting-row"><span>Endpoint</span><strong id="provider-endpoint">********</strong></div><div class="head-actions"><button id="provider-audit" class="secondary">Audit redacted</button><button id="provider-refresh" class="secondary">Làm mới</button></div><div id="provider-actions" class="recovery-actions" hidden><button id="provider-retry" class="secondary">Thử lại an toàn</button><button id="provider-change-model" class="secondary">Đổi model</button><button id="provider-diagnostics" class="secondary">Diagnostics</button></div></article><article class="card"><h2>Model manager</h2><div class="setting-row"><label for="model-mode">Chế độ</label><select id="model-mode"><option value="AUTO">AUTO</option><option value="MANUAL">MANUAL</option></select></div><div class="setting-row"><label for="model-id">Canonical model ID</label><input id="model-id" class="setting-input" placeholder="AUTO hoặc provider/model"></div><div class="setting-row"><span>Trạng thái</span><strong id="model-status">NOT_QUERIED</strong></div><button id="model-refresh" class="secondary">Đọc model status</button><button id="model-save" class="primary">Lưu model</button></article><article class="card"><h2>MCP</h2><div class="setting-row"><span>Transport</span><strong>localhost JSON-lines</strong></div><div class="setting-row"><span>Bridge</span><strong>127.0.0.1:9876</strong></div><div class="setting-row"><span>Trạng thái</span><strong id="settings-mcp">CONNECTED</strong></div></article><article class="card"><h2>SketchUp</h2><div class="setting-row"><span>Ruby API</span><strong>Official SketchUp Ruby API</strong></div><div class="setting-row"><span>Write mặc định</span><strong>READ ONLY</strong></div><div class="setting-row"><span>System file</span><strong>sketchup.rb untouched</strong></div></article><article class="card"><h2>Tools / Skills / Plugins</h2><div class="setting-row"><span>Tools</span><strong id="settings-tools">-</strong></div><div class="setting-row"><span>Skills</span><strong id="settings-skills">-</strong></div><div class="setting-row"><span>Plugins</span><strong id="settings-plugins">-</strong></div></article><article class="card"><h2>Permissions</h2><div class="setting-row"><span>D: drive</span><strong class="good">READ ONLY</strong></div><div class="setting-row"><span>Xóa .skp/.skb</span><strong class="good">BLOCKED</strong></div><div class="setting-row"><span>eval_ruby</span><strong>Developer only</strong></div><div class="setting-row"><span>Network</span><strong>Explicit test only</strong></div></article><article class="card"><h2>Runtime / Logs / Developer</h2><div class="setting-row"><span>Refresh</span><strong>1 second</strong></div><div class="setting-row"><span>Trace limit</span><strong>200 events</strong></div><div class="setting-row"><span>Logs</span><strong>E:/AI-DG/OUTPUT/logs</strong></div><div class="setting-row"><span>Developer mode</span><strong id="settings-developer">OFF</strong></div></article></div></section>
-      <section class="panel" id="panel-developer"><div class="page-head"><div><h1>Developer</h1><p>Chỉ xem request/response và diagnostics; không sửa production code ở đây.</p></div><div class="head-actions"><button id="developer-refresh" class="secondary">Làm mới code view</button><button id="reload-runtime" class="secondary">Reload Ruby runtime</button></div></div><article class="card"><h2>Runtime source</h2><div id="runtime-source" class="json-box">Chưa có source revision.</div></article><div class="two-col"><article class="card"><h2>MCP request JSON</h2><pre id="developer-request" class="json-box">Chưa có request.</pre></article><article class="card"><h2>MCP response JSON</h2><pre id="developer-response" class="json-box">Chưa có response.</pre></article></div><article class="card"><h2>Ruby / Python handlers</h2><div id="developer-code-files" class="developer-code-files"><div class="empty">Chưa đọc source.</div></div></article><article class="card"><h2>Active context & errors</h2><pre id="developer-context" class="json-box">Chưa có context.</pre><h2 class="subheading">Trace JSON</h2><pre id="developer-trace" class="json-box">Chưa có trace.</pre><div id="reload-result" class="empty"></div></article></section>
-      <section class="panel" id="panel-logs"><div class="page-head"><div><h1>Logs</h1><p>Log cục bộ đã tách theo bridge, MCP, agent, provider, tools, runtime và errors.</p></div><button id="refresh-logs" class="secondary">Làm mới logs</button></div><div id="log-list" class="log-list"><div class="empty">Chưa đọc logs.</div></div></section>
+      <section class="panel" id="panel-settings">
+        <div class="page-head"><div><h1>Cài đặt</h1><p>Thiết lập tối giản cho SketchUp và hai runtime native.</p></div></div>
+        <div class="settings-grid">
+          <article class="card"><h2>SketchUp</h2><div class="setting-row"><span>Ruby API</span><strong>Official SketchUp Ruby API</strong></div><div class="setting-row"><span>Viewport</span><strong id="settings-bridge">Đang kiểm tra</strong></div><div class="setting-row"><span>sketchup.rb</span><strong>Giữ nguyên</strong></div></article>
+          <article class="card"><h2>Runtime native</h2><div class="setting-row"><span>Codex</span><strong id="settings-codex">Đang kiểm tra</strong></div><div class="setting-row"><span>Cline</span><strong id="settings-cline">Đang kiểm tra</strong></div><div class="setting-row"><span>Agent Host</span><strong id="settings-host">Đang kiểm tra</strong></div></article>
+          <article class="card"><h2>An toàn</h2><div class="setting-row"><span>Model mặc định</span><strong>Do runtime quản lý</strong></div><div class="setting-row"><span>Ghi model</span><strong>Cần bật thủ công</strong></div><div class="setting-row"><span>Approval</span><strong>Native + AI-DG</strong></div><div class="setting-row"><span>Đăng nhập</span><strong>Do runtime quản lý</strong></div></article>
+          <article class="card"><h2>Project root</h2><div class="setting-row"><span>Thư mục hiện tại</span><strong id="settings-project">Chưa chọn</strong></div><button id="settings-source-select" class="secondary">Đổi thư mục</button></article>
+        </div>
+      </section>
+
+      <section class="panel developer-only" id="panel-developer" hidden>
+        <div class="page-head"><div><h1>Developer Diagnostics</h1><p>Chỉ hiển thị khi AI_DG_DEVELOPER_MODE=1.</p></div><div class="head-actions"><button id="developer-refresh" class="secondary">Làm mới</button><button id="reload-runtime" class="secondary">Reload Ruby runtime</button></div></div>
+        <div class="two-col"><article class="card"><h2>Agent Host</h2><pre id="developer-host" class="json-box">Chưa có dữ liệu.</pre></article><article class="card"><h2>Runtime source</h2><pre id="developer-runtime" class="json-box">Chưa có dữ liệu.</pre></article></div>
+        <article class="card"><h2>Raw events</h2><pre id="developer-events" class="json-box">Chưa có event.</pre></article>
+      </section>
     </main>
   </div>
   <script src="control_center.js"></script>

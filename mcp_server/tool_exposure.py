@@ -13,7 +13,7 @@ import os
 from typing import Any, Iterable
 
 
-CAPABILITY_ORDER = ("CORE", "MODEL_READ", "DRAWING", "BUILD", "VERIFY", "PROVIDER", "DEV")
+CAPABILITY_ORDER = ("CORE", "MODEL_READ", "DRAWING", "BUILD", "VERIFY", "DEV")
 
 
 CORE_TOOLS = frozenset(
@@ -29,9 +29,6 @@ CORE_TOOLS = frozenset(
         "ai_dg_list_tools",
         "ai_dg_list_skills",
         "ai_dg_load_skill",
-        "ai_dg_agent_ask",
-        "ai_dg_session_save",
-        "ai_dg_session_load",
     }
 )
 
@@ -98,19 +95,6 @@ BUILD_TOOLS = frozenset(
 VERIFY_TOOLS = frozenset({"ai_dg_verification"})
 
 
-PROVIDER_TOOLS = frozenset(
-    {
-        "ai_dg_model_status",
-        "ai_dg_model_select",
-        "ai_dg_9router_sync_models",
-        "ai_dg_provider_status",
-        "ai_dg_provider_configure",
-        "ai_dg_provider_disconnect",
-        "ai_dg_9router_test",
-    }
-)
-
-
 DEV_TOOLS = frozenset(
     {
         "sketchup_get_trace",
@@ -138,7 +122,6 @@ GROUP_TOOLS = {
     "DRAWING": DRAWING_TOOLS,
     "BUILD": BUILD_TOOLS,
     "VERIFY": VERIFY_TOOLS,
-    "PROVIDER": PROVIDER_TOOLS,
     "DEV": DEV_TOOLS,
 }
 
@@ -150,7 +133,7 @@ PROFILE_GROUPS = {
     "minimal": frozenset({"CORE", "MODEL_READ"}),
     "model_read": frozenset({"CORE", "MODEL_READ"}),
     "drawing": frozenset({"CORE", "MODEL_READ", "DRAWING", "VERIFY"}),
-    "agent": frozenset({"CORE", "MODEL_READ", "PROVIDER"}),
+    "agent": frozenset({"CORE", "MODEL_READ"}),
     "build": frozenset({"CORE", "MODEL_READ", "DRAWING", "BUILD", "VERIFY"}),
     "full": frozenset(CAPABILITY_ORDER),
     "dev": frozenset(CAPABILITY_ORDER),

@@ -1,3 +1,4 @@
+# Archived migration reference; not imported by the production runtime.
 #!/usr/bin/env python3
 """Run one bounded, read-only Codex CLI turn for the SketchUp Control Center.
 

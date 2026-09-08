@@ -55,7 +55,16 @@ async def main() -> int:
             "schema_reduction_percent": exposure.get("schema_reduction_percent"),
             "has_build": "sketchup_create_cabinet" in names,
             "has_drawing": "ai_dg_source_ingest" in names,
-            "has_provider": "ai_dg_provider_status" in names,
+            "has_legacy_agent_tools": bool(names.intersection({
+                "ai_dg_agent_ask",
+                "ai_dg_model_status",
+                "ai_dg_model_select",
+                "ai_dg_9router_sync_models",
+                "ai_dg_provider_status",
+                "ai_dg_provider_configure",
+                "ai_dg_provider_disconnect",
+                "ai_dg_9router_test",
+            })),
             "has_eval_ruby": "sketchup_eval_ruby" in names,
         }
 
@@ -73,7 +82,7 @@ async def main() -> int:
         and not drawing["has_build"]
         and build["has_drawing"]
         and build["has_build"]
-        and not build["has_provider"]
+        and not build["has_legacy_agent_tools"]
         and full["tool_count"] == full["reported_all"]
         and not full["has_eval_ruby"]
     )

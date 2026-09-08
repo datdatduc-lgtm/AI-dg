@@ -1,3 +1,4 @@
+# Archived migration reference; not imported by the production runtime.
 """Redacted 9Router adapter.
 
 Configuration is discovered from E:/api-key.properties.  Key values remain in

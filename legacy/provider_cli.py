@@ -1,3 +1,4 @@
+# Archived migration reference; not imported by the production runtime.
 #!/usr/bin/env python3
 """One-shot local provider manager used by the SketchUp Control Center.
 

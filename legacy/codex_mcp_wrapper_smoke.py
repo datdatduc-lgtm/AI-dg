@@ -1,3 +1,4 @@
+# Archived migration reference; not imported by the production runtime.
 #!/usr/bin/env python3
 """Verify the workspace Codex-to-AI-DG MCP wrapper without a model turn."""
 

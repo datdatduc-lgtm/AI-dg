@@ -26,7 +26,8 @@ module AI_DG
     MAX_REQUEST_BYTES = 1_048_576 unless const_defined?(:MAX_REQUEST_BYTES, false)
     DEFAULT_LOG_PATH = 'E:/AI-DG/OUTPUT/logs/runtime.log' unless const_defined?(:DEFAULT_LOG_PATH, false)
     DEFAULT_EVENT_LOG_PATH = 'E:/AI-DG/OUTPUT/logs/bridge.log' unless const_defined?(:DEFAULT_EVENT_LOG_PATH, false)
-    LOG_FILES = %w[bridge mcp agent provider tools runtime errors].freeze unless const_defined?(:LOG_FILES, false)
+    remove_const(:LOG_FILES) if const_defined?(:LOG_FILES, false)
+    LOG_FILES = %w[bridge mcp agent tools runtime errors].freeze
     TRACE_LIMIT = 200 unless const_defined?(:TRACE_LIMIT, false)
     DEFAULT_ACCESS_MODE = 'read_only' unless const_defined?(:DEFAULT_ACCESS_MODE, false)
     DEVELOPER_MODE = ENV.fetch('AI_DG_DEVELOPER_MODE', '0') == '1' unless const_defined?(:DEVELOPER_MODE, false)
@@ -148,6 +149,10 @@ module AI_DG
 
     if defined?(Sketchup::AppObserver)
       class AppObserver < Sketchup::AppObserver
+        def onQuit
+          ControlCenter.close_session if defined?(ControlCenter)
+        end
+
         def onNewModel(model)
           Bridge.send(:attach_observers, model)
           Bridge.record_event('model_opened', { model_title: (model.title rescue ''), status: 'SUCCESS' })
@@ -398,7 +403,6 @@ module AI_DG
         model = Sketchup.active_model
         now = Time.now
         trace = trace_snapshot({ 'limit' => 40 })
-        manager = model_manager_snapshot
         {
           sketchup_pid: Process.pid,
           sketchup_version: Sketchup.version,
@@ -407,11 +411,10 @@ module AI_DG
           bridge_status: runtime_active? ? 'ONLINE' : 'STARTING',
           access_mode: access_mode,
           developer_mode: DEVELOPER_MODE,
-          provider: manager[:provider],
-          model_ai: manager[:model],
-          model_mode: manager[:mode],
-          provider_status: manager[:provider_status],
-          model_manager: manager,
+          agent_runtime: {
+            codex: 'DELEGATED_TO_CODEX_APP_SERVER',
+            cline: 'DELEGATED_TO_CLINE_ACP'
+          },
            bridge_source: __FILE__,
            bridge_source_sha256: source_sha256,
            reload_generation: (@reload_generation || 0),
@@ -433,8 +436,7 @@ module AI_DG
             bridge: runtime_active? ? 'ONLINE' : 'STARTING',
             mcp: mcp_status,
             agent: current_agent_status,
-            provider: manager[:provider_status],
-            router: ENV.fetch('AI_DG_ROUTER_STATUS', 'NOT_VERIFIED')
+            agent_runtime: 'NATIVE_RUNTIME'
           },
           errors: trace.select { |row| row[:status] == 'ERROR' },
           warnings: [],
@@ -666,79 +668,13 @@ module AI_DG
         nil
       end
 
-      # The UI may show provider/model readiness without ever exposing a
-      # credential or probing the network.  The selected model is persisted
-      # only under the writable E: workspace.
-      def model_manager_snapshot
-        state_path = 'E:/AI-DG/OUTPUT/runtime/model-state.json'
-        catalog_path = 'E:/AI-DG/OUTPUT/runtime/model-catalog.json'
-        state = if File.file?(state_path)
-                  JSON.parse(File.read(state_path, encoding: 'UTF-8'))
-                else
-                  {}
-                end
-        available_models = if File.file?(catalog_path)
-                             catalog = JSON.parse(File.read(catalog_path, encoding: 'UTF-8'))
-                             rows = catalog.is_a?(Hash) ? catalog['models'] : catalog
-                             Array(rows).first(200).select { |row| row.is_a?(Hash) && row['id'].to_s.match?(/\A[A-Za-z0-9._:\/-]{1,200}\z/) }.map do |row|
-                               row.select { |key, _value| %w[id name context tool_support vision reasoning cost status latency_ms].include?(key.to_s) }
-                             end
-                           else
-                             []
-                           end
-        configured_model = state['model'].to_s.strip
-        configured_model = ENV['AI_DG_MODEL'].to_s.strip if configured_model.empty?
-        provider = ENV['AI_DG_PROVIDER'].to_s.strip
-        provider = '9Router' if provider.empty? && File.file?('E:/api-key.properties')
-        provider = 'Not configured' if provider.empty?
-        key_present = false
-        endpoint_count = 0
-        if File.file?('E:/api-key.properties')
-          File.foreach('E:/api-key.properties', encoding: 'UTF-8', invalid: :replace, undef: :replace, replace: '') do |raw|
-            line = raw.to_s.strip
-            key, value = line.split(/[=:]/, 2)
-            key_present ||= key.to_s.match?(/9router|orcarouter|openrouter/i) && value.to_s.strip.gsub(/["']/, '').length >= 16
-            endpoint_count += line.scan(%r{https?://[^\s"']+}i).length if line.match?(/9router|orcarouter|openrouter/i)
-          end
-        end
-        provider_state_path = 'E:/AI-DG/OUTPUT/runtime/provider-state.json'
-        provider_state = if File.file?(provider_state_path)
-                           JSON.parse(File.read(provider_state_path, encoding: 'UTF-8'))
-                         else
-                           {}
-                         end
-        saved_status = provider_state.is_a?(Hash) ? provider_state['status'].to_s : ''
-        allowed_states = %w[UNCONFIGURED TESTING CONNECTED AUTH_ERROR RATE_LIMITED NO_CREDIT OFFLINE MODEL_ERROR]
-        provider_status = if allowed_states.include?(saved_status)
-                            saved_status
-                          elsif key_present && endpoint_count.positive?
-                            'OFFLINE'
-                          else
-                            'UNCONFIGURED'
-                          end
-        {
-          provider: provider,
-          provider_status: provider_status,
-          mode: configured_model.empty? ? 'AUTO' : 'MANUAL',
-          model: configured_model.empty? ? 'AUTO' : configured_model,
-          configured: !configured_model.empty?,
-          network_test: provider_state.is_a?(Hash) && provider_state['operation'].to_s == 'test_chat' ? provider_state['status'].to_s : 'NOT_RUN',
-          available_models: available_models,
-          models_source: available_models.empty? ? 'NOT_QUERIED' : 'SYNCED_LOCAL',
-          endpoint_count: endpoint_count,
-          state_path: state_path,
-          catalog_path: catalog_path
-        }
-      rescue StandardError => e
-        { provider: 'Not configured', provider_status: 'AUDIT_ERROR', mode: 'AUTO', model: 'AUTO', configured: false, network_test: 'NOT_RUN', error: e.class.name }
-      end
-
       def code_view_snapshot
         source_files = [
           ['Ruby bridge dispatch', File.expand_path(__FILE__), 180, 120],
           ['Ruby Control Center agent', File.join(__dir__, 'control_center.rb'), 200, 100],
           ['Python MCP handlers', 'E:/AI-DG/mcp_server/server.py', 130, 120],
-          ['Python provider adapter', 'E:/AI-DG/mcp_server/provider.py', 1, 120]
+          ['Python Agent Host', 'E:/AI-DG/agent_host/host.py', 1, 160],
+          ['Ruby Agent Host client', 'E:/AI-DG/bridge_sketchup/ai_dg_bridge/agent_host_client.rb', 1, 120]
         ].map do |label, path, start_line, line_count|
           {
             label: label,
@@ -1037,6 +973,8 @@ module AI_DG
 
       def guard_model_write!
         raise SecurityError, 'READ_ONLY_MODE: enable Write mode in AI-DG Control Center first' unless access_mode == 'write_enabled'
+        approved = UI.messagebox('AI-DG yêu cầu thay đổi model hiện tại. Cho phép thao tác này?', MB_YESNO)
+        raise SecurityError, 'USER_DECLINED_MODEL_WRITE' unless approved == IDYES
       end
 
       def create_primitive_box(model, data)

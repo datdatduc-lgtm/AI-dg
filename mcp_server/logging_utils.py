@@ -1,6 +1,6 @@
 """Small local JSONL logger for the AI-DG runtime.
 
-Only sanitized event metadata is written.  Callers must never pass provider
+Only sanitized event metadata is written. Callers must never pass
 credentials, full prompts, or model geometry into this helper.
 """
 
@@ -19,14 +19,14 @@ _LOCK = threading.Lock()
 
 def ensure_log_files() -> None:
     LOG_ROOT.mkdir(parents=True, exist_ok=True)
-    for name in ("bridge", "mcp", "agent", "provider", "tools", "runtime", "errors"):
+    for name in ("bridge", "mcp", "agent", "tools", "runtime", "errors"):
         path = LOG_ROOT / f"{name}.log"
         if not path.exists():
             path.touch()
 
 
 def log_event(name: str, event: str, **fields: Any) -> None:
-    if name not in {"bridge", "mcp", "agent", "provider", "tools", "runtime", "errors"}:
+    if name not in {"bridge", "mcp", "agent", "tools", "runtime", "errors"}:
         raise ValueError("INVALID_LOG_NAME")
     ensure_log_files()
     payload = {

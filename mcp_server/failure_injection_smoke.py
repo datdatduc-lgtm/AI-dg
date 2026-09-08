@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Safe MCP-side failure smoke test.
 
-This test never stops SketchUp and never contacts 9Router.  It points one
+This test never stops SketchUp or contacts a model service. It points one
 in-process client call at an ephemeral unused localhost port to verify the
-disconnect/error contract, then verifies that provider model sync remains
-blocked without the explicit network opt-in.
+disconnect/error contract, then verifies that legacy agent tools are absent.
 """
 
 from __future__ import annotations
@@ -52,13 +51,21 @@ def main() -> int:
             "mcp": runtime.get("mcp"),
         })
 
-        provider = json.loads(server.ai_dg_9router_sync_models())
-        provider_ok = provider.get("status") == "blocked" and provider.get("request_count") == 0
+        legacy_ids = {
+            "ai_dg_agent_ask",
+            "ai_dg_model_status",
+            "ai_dg_model_select",
+            "ai_dg_9router_sync_models",
+            "ai_dg_provider_status",
+            "ai_dg_provider_configure",
+            "ai_dg_provider_disconnect",
+            "ai_dg_9router_test",
+        }
+        legacy_ok = not legacy_ids.intersection({row["id"] for row in server.TOOL_REGISTRY})
         report["tests"].append({
-            "name": "provider_sync_network_guard",
-            "status": "PASS" if provider_ok else "FAIL",
-            "error": provider.get("error"),
-            "request_count": provider.get("request_count"),
+            "name": "legacy_agent_tools_removed",
+            "status": "PASS" if legacy_ok else "FAIL",
+            "legacy_tools": sorted(legacy_ids.intersection({row["id"] for row in server.TOOL_REGISTRY})),
         })
     finally:
         server.SKETCHUP_HOST = original_host

@@ -1,3 +1,4 @@
+# Archived migration reference; not imported by the production runtime.
 #!/usr/bin/env python3
 """Exercise the bounded provider-agent router without contacting 9Router."""
 

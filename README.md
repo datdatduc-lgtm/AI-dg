@@ -4,15 +4,20 @@ AI-dg is a portable Agent Skill for interior/joinery/CNC drawing understanding, 
 
 ## Current stage
 
-**V0.3.3-alpha — concise Excel + material swatch support**
+**Native Codex/Cline integration for SketchUp — acceptance in progress**
 
-The prompt pack now reorients the runtime toward **Drawing-to-SketchUp
-Reconstruction Engine**. The implementation audit is kept in
-`.codex/PROMPT_AUDIT.md`; the MCP-SU layer provides provenance-first
-2D-ingestion/review/spec/build/verification stages, semantic SketchUp tools,
-real-provider-only production chat, and explicit safety gates. The legacy
-filesystem-first estimator workflow below remains available for existing
-projects.
+SketchUp hosts a minimal workspace backed by persistent Codex App Server and
+Cline ACP processes. `agent_host/` brokers their real sessions, events and
+approvals; both use the shared AI-DG MCP launcher and SketchUp Ruby bridge.
+The former provider/chat engine is archived under `legacy/` and is not exposed
+by production MCP or UI.
+
+Start with the [native architecture](docs/architecture/00_NATIVE_AGENT_GOAL.md),
+[execution brief](docs/architecture/05_CODEX_EXECUTION_BRIEF.md) and
+[tested status / remaining manual checks](docs/architecture/06_IMPLEMENTATION_STATUS.md).
+The deleted `prompt/00`–`14` pack is superseded by these documents. Deeper 2D/3D
+work remains gated on native-runtime acceptance. Existing drawing, estimation,
+review, build and verification pipelines remain available below.
 
 The local/Codex workflow is filesystem-first:
 
