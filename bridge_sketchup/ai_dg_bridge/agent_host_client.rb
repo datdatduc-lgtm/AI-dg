@@ -16,8 +16,9 @@ module AI_DG
 
       attr_reader :last_error
 
-      def initialize(root = 'E:/AI-DG')
+      def initialize(root = 'E:/AI-DG', instance_id = nil)
         @root = root.to_s
+        @instance_id = instance_id.to_s.strip
         @mutex = Mutex.new
         @messages = []
         @outgoing = Queue.new
@@ -111,11 +112,13 @@ module AI_DG
         # their authentication and the host only forwards the process env.
         env = ENV.to_h.merge(
           'AI_DG_ROOT' => @root,
+          'AI_DG_SKETCHUP_INSTANCE_ID' => @instance_id,
           'PYTHONPATH' => [File.join(@root, 'OUTPUT', 'mcp_deps'), @root, File.join(@root, 'mcp_server'), ENV['PYTHONPATH']].compact.reject(&:empty?).join(File::PATH_SEPARATOR)
         )
         args = [executable]
         args.concat(['-3.12']) if File.basename(executable).downcase == 'py.exe'
         args.concat([host_script, '--root', @root])
+        args.concat(['--instance-id', @instance_id]) unless @instance_id.empty?
         @stdin, @stdout, @stderr, @wait_thread = Open3.popen3(env, *args)
         [@stdin, @stdout, @stderr].each(&:binmode)
         start_writer

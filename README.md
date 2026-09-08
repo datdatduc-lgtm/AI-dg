@@ -15,6 +15,8 @@ by production MCP or UI.
 Start with the [native architecture](docs/architecture/00_NATIVE_AGENT_GOAL.md),
 [execution brief](docs/architecture/05_CODEX_EXECUTION_BRIEF.md) and
 [tested status / remaining manual checks](docs/architecture/06_IMPLEMENTATION_STATUS.md).
+Multi-process routing is specified in
+[SketchUp instance router](docs/architecture/07_SKETCHUP_INSTANCE_ROUTER.md).
 The deleted `prompt/00`–`14` pack is superseded by these documents. Deeper 2D/3D
 work remains gated on native-runtime acceptance. Existing drawing, estimation,
 review, build and verification pipelines remain available below.
@@ -172,8 +174,10 @@ Optional extras include PyMuPDF, openpyxl, Pillow and jsonschema.
 
 ## MCP-SU runtime
 
-The SketchUp 2023 extension exposes the official Ruby API through the local
-JSON-lines bridge at `127.0.0.1:9876`.  Codex/OpenCode-style clients should use
+The SketchUp 2023 extension exposes the official Ruby API through an
+OS-assigned loopback port. Each `SketchUp.exe` publishes its own bounded
+heartbeat and identity record; MCP clients list and select the exact process
+before model writes. Codex/OpenCode-style clients should use
 `mcp_config.json`; its command points to `mcp_server/launcher.py`, which adds
 the local MCP dependency directory without requiring a shell or provider
 credentials.
@@ -205,9 +209,9 @@ door/drawer/countertop/component operations plus official API read-back. See
 [`.codex/DRAWING_PIPELINE.md`](.codex/DRAWING_PIPELINE.md) and
 [`.codex/TEST_RESULTS.md`](.codex/TEST_RESULTS.md).
 
-Production chat never falls back to scripted responses: without a successful
-provider test, `ai_dg_agent_ask` returns `REAL_PROVIDER_REQUIRED`. Provider
-network tests and SketchUp model writes remain explicit opt-in operations.
+Production has no provider fallback or scripted AI-DG chat. SketchUp model
+writes require an exact live instance target, native approval, AI-DG write
+mode and the in-SketchUp confirmation.
 
 ## Accuracy rules
 

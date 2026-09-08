@@ -18,6 +18,10 @@ CAPABILITY_ORDER = ("CORE", "MODEL_READ", "DRAWING", "BUILD", "VERIFY", "DEV")
 
 CORE_TOOLS = frozenset(
     {
+        "sketchup_list_instances",
+        "sketchup_select_instance",
+        "sketchup_get_active_instance",
+        "sketchup_clear_instance",
         "sketchup_ping",
         "sketchup_health",
         "sketchup_get_runtime_state",

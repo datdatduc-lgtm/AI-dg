@@ -14,7 +14,6 @@ $files = @(
     @{ Source = Join-Path $source 'ai_dg_bridge\toolbar.rb'; Destination = Join-Path $destination 'toolbar.rb' },
     @{ Source = Join-Path $source 'ai_dg_bridge\control_center.rb'; Destination = Join-Path $destination 'control_center.rb' },
     @{ Source = Join-Path $source 'ai_dg_bridge\agent_host_client.rb'; Destination = Join-Path $destination 'agent_host_client.rb' },
-    @{ Source = Join-Path $source 'ai_dg_bridge\helper_process.rb'; Destination = Join-Path $destination 'helper_process.rb' },
     @{ Source = Join-Path $PSScriptRoot 'agent_host\host.py'; Destination = Join-Path $destination 'agent_host\host.py' },
     @{ Source = Join-Path $source 'ai_dg_bridge\icons\ai_dg_mcp.svg'; Destination = Join-Path $destination 'icons\ai_dg_mcp.svg' }
 )
@@ -57,6 +56,14 @@ foreach ($uiFile in $uiFiles) {
         throw "Hash mismatch after deploy: $uiDestination"
     }
     [pscustomobject]@{ File = $uiDestination; SHA256 = $deployedHash }
+}
+
+# Remove the retired provider helper from older deployments. It is not loaded
+# by the native Codex/Cline architecture and keeping it beside production code
+# makes hard-fail audits ambiguous.
+$retiredHelper = Join-Path $destination 'helper_process.rb'
+if (Test-Path -LiteralPath $retiredHelper -PathType Leaf) {
+    Remove-Item -LiteralPath $retiredHelper -Force
 }
 
 Write-Host 'Bridge deployed. No SketchUp process was stopped or restarted.'

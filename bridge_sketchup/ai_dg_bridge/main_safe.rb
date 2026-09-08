@@ -12,13 +12,18 @@ require 'fileutils'
 require 'time'
 require 'digest'
 require 'uri'
+require 'securerandom'
 require_relative 'geometry_builder'
 require_relative 'toolbar'
 
 module AI_DG
   module Bridge
     HOST = '127.0.0.1' unless const_defined?(:HOST, false)
-    PORT = 9876 unless const_defined?(:PORT, false)
+    PORT = begin
+      Integer(ENV.fetch('AI_DG_SKETCHUP_PORT', '0'))
+    rescue StandardError
+      0
+    end unless const_defined?(:PORT, false)
     IO_TIMEOUT = 15.0 unless const_defined?(:IO_TIMEOUT, false)
     START_DELAY = 5.0 unless const_defined?(:START_DELAY, false)
     TICK_INTERVAL = 0.05 unless const_defined?(:TICK_INTERVAL, false)
@@ -26,6 +31,8 @@ module AI_DG
     MAX_REQUEST_BYTES = 1_048_576 unless const_defined?(:MAX_REQUEST_BYTES, false)
     DEFAULT_LOG_PATH = 'E:/AI-DG/OUTPUT/logs/runtime.log' unless const_defined?(:DEFAULT_LOG_PATH, false)
     DEFAULT_EVENT_LOG_PATH = 'E:/AI-DG/OUTPUT/logs/bridge.log' unless const_defined?(:DEFAULT_EVENT_LOG_PATH, false)
+    INSTANCE_REGISTRY_DIR = 'E:/AI-DG/OUTPUT/runtime/sketchup-instances' unless const_defined?(:INSTANCE_REGISTRY_DIR, false)
+    INSTANCE_HEARTBEAT_INTERVAL = 2.0 unless const_defined?(:INSTANCE_HEARTBEAT_INTERVAL, false)
     remove_const(:LOG_FILES) if const_defined?(:LOG_FILES, false)
     LOG_FILES = %w[bridge mcp agent tools runtime errors].freeze
     TRACE_LIMIT = 200 unless const_defined?(:TRACE_LIMIT, false)
@@ -151,6 +158,7 @@ module AI_DG
       class AppObserver < Sketchup::AppObserver
         def onQuit
           ControlCenter.close_session if defined?(ControlCenter)
+          Bridge.stop
         end
 
         def onNewModel(model)
@@ -213,6 +221,7 @@ module AI_DG
         @last_tool = action
         @last_session_id = session_id if session_id
         record_event('tool_started', { request_id: request_id, session_id: session_id, tool: action, status: 'RUNNING', started_at: started_wall, bytes_in: request_bytes, stage: 'RUBY_BRIDGE' })
+        validate_target_request!(request)
         return { status: 'ok', stage: stage_name, request_id: request_id } if DEBUG_STAGE == 7
         return { status: 'error', error: 'Action disabled during B8', request_id: request_id } if DEBUG_STAGE == 8 && action != 'ping'
 
@@ -287,7 +296,7 @@ module AI_DG
                    { status: 'error', error: "Unknown action: #{action}" }
                  end
         elapsed_ms = ((monotonic_time - started_at) * 1000).round(2)
-        response = result.merge(request_id: request_id, session_id: session_id, latency_ms: elapsed_ms)
+        response = result.merge(request_id: request_id, session_id: session_id, latency_ms: elapsed_ms, target: instance_snapshot)
         response_bytes = (JSON.generate(response).bytesize rescue nil)
         record_event('tool_finished', { request_id: request_id, session_id: session_id, tool: action, status: response[:status] == 'ok' ? 'SUCCESS' : 'ERROR', started_at: started_wall, ended_at: Time.now.utc.iso8601(3), duration_ms: elapsed_ms, latency_ms: elapsed_ms, bytes_in: request_bytes, bytes_out: response_bytes, retries: 0, stage: 'RUBY_BRIDGE' })
         @last_response_json = JSON.pretty_generate(safe_code_payload(response))
@@ -296,7 +305,7 @@ module AI_DG
         log_exception('dispatch', e)
         elapsed_ms = ((monotonic_time - started_at) * 1000).round(2)
         record_event('tool_finished', { request_id: request_id, session_id: session_id, tool: action, status: 'ERROR', started_at: started_wall, ended_at: Time.now.utc.iso8601(3), duration_ms: elapsed_ms, latency_ms: elapsed_ms, bytes_in: request_bytes, retries: 0, stage: 'RUBY_BRIDGE', error: e.message })
-        response = { status: 'error', error: "#{e.class}: #{e.message}", request_id: request_id, latency_ms: ((monotonic_time - started_at) * 1000).round(2) }
+        response = { status: 'error', error: "#{e.class}: #{e.message}", request_id: request_id, latency_ms: ((monotonic_time - started_at) * 1000).round(2), target: (instance_snapshot rescue nil) }
         @last_response_json = JSON.pretty_generate(safe_code_payload(response))
         response
       end
@@ -340,6 +349,7 @@ module AI_DG
         start_idle_worker
         return partial_start(4, 'background worker created') if DEBUG_STAGE == 4
         bind_server
+        start_instance_registry
         return partial_start(5, 'TCPServer bound') if DEBUG_STAGE == 5
 
         @running = true
@@ -348,8 +358,8 @@ module AI_DG
 
         @runtime_started = true
         @runtime_started_at = Time.now
-        record_event('bridge_started', { status: 'SUCCESS', port: PORT })
-        log("#{stage_name}: listening on #{HOST}:#{PORT}")
+        record_event('bridge_started', { status: 'SUCCESS', instance_id: instance_id, port: bridge_port })
+        log("#{stage_name}: listening on #{HOST}:#{bridge_port} as #{instance_id}")
         true
       rescue StandardError => e
         log_exception('start', e)
@@ -366,6 +376,7 @@ module AI_DG
         stop_dispatch_timer
         stop_idle_worker
         @startup_timer_id = nil
+        stop_instance_registry
         close_server_socket
         close_client_sockets
         detach_app_observer
@@ -396,7 +407,41 @@ module AI_DG
         normalized = mode.to_s == 'write_enabled' ? 'write_enabled' : DEFAULT_ACCESS_MODE
         @access_mode = normalized
         record_event('mode_changed', { mode: normalized, status: 'SUCCESS' })
+        publish_instance_heartbeat
         normalized
+      end
+
+      def instance_id
+        initialize_instance_identity
+        @instance_id
+      end
+
+      def bridge_port
+        @bound_port || begin
+          @server_socket.addr[1] if @server_socket && !@server_socket.closed?
+        rescue StandardError
+          nil
+        end
+      end
+
+      def instance_snapshot
+        initialize_instance_identity
+        model = Sketchup.active_model
+        now = Time.now.utc
+        {
+          instance_id: @instance_id,
+          pid: Process.pid,
+          boot_id: @boot_id,
+          host: HOST,
+          port: bridge_port,
+          sketchup_version: Sketchup.version,
+          model_title: model&.title.to_s,
+          model_path: model&.path.to_s,
+          bridge_generation: (@reload_generation || 0),
+          write_mode: access_mode,
+          last_seen: now.iso8601(3),
+          last_seen_epoch: now.to_f
+        }
       end
 
       def runtime_snapshot
@@ -406,6 +451,10 @@ module AI_DG
         {
           sketchup_pid: Process.pid,
           sketchup_version: Sketchup.version,
+          instance_id: instance_id,
+          boot_id: @boot_id,
+          bridge_host: HOST,
+          bridge_port: bridge_port,
           model_title: model&.title.to_s,
           model_path: model&.path.to_s,
           bridge_status: runtime_active? ? 'ONLINE' : 'STARTING',
@@ -648,7 +697,9 @@ module AI_DG
         end
         attach_app_observer
         attach_observers(Sketchup.active_model)
+        start_instance_registry if runtime_active? && !@instance_registry_started
         @reload_generation = (@reload_generation || 0) + 1
+        publish_instance_heartbeat
         @runtime_started_at ||= Time.now
         record_event('runtime_reloaded', {
           status: 'SUCCESS',
@@ -1316,7 +1367,121 @@ module AI_DG
         raise
       end
 
+      def initialize_instance_identity
+        @boot_id ||= SecureRandom.uuid
+        @instance_id ||= "su-#{Process.pid}-#{@boot_id.delete('-')[0, 12]}"
+        @instance_registry_path ||= File.join(INSTANCE_REGISTRY_DIR, "#{@instance_id}.json")
+      end
+
+      def validate_target_request!(request)
+        return true unless request['bridge_transport'] == 'tcp'
+
+        target = request['target']
+        raise RuntimeError, 'TARGET_REQUIRED' unless target.is_a?(Hash)
+
+        expected = {
+          'instance_id' => instance_id,
+          'pid' => Process.pid,
+          'boot_id' => @boot_id,
+          'port' => bridge_port
+        }
+        mismatch = expected.any? { |key, value| target[key].to_s != value.to_s }
+        raise RuntimeError, 'TARGET_IDENTITY_MISMATCH' if mismatch
+
+        true
+      end
+
+      def start_instance_registry
+        initialize_instance_identity
+        return true if @instance_registry_started
+
+        FileUtils.mkdir_p(INSTANCE_REGISTRY_DIR)
+        @instance_registry_queue = Queue.new
+        @instance_registry_writer = Thread.new do
+          loop do
+            message = @instance_registry_queue.pop
+            break if message == :stop
+            if message == :delete
+              File.delete(@instance_registry_path) if File.file?(@instance_registry_path)
+            else
+              write_instance_registry_file(message)
+            end
+          rescue StandardError => e
+            log_exception('instance registry writer', e)
+          end
+        end
+        @instance_registry_writer.abort_on_exception = false
+        @instance_registry_started = true
+        @instance_heartbeat_timer_id = UI.start_timer(INSTANCE_HEARTBEAT_INTERVAL, true) { publish_instance_heartbeat }
+        publish_instance_heartbeat
+        true
+      rescue StandardError => e
+        @instance_registry_started = false
+        log_exception('start instance registry', e)
+        false
+      end
+
+      def publish_instance_heartbeat
+        return false unless @instance_registry_started && bridge_port
+
+        # Only the UI thread reads SketchUp model state. The writer thread owns
+        # filesystem I/O, keeping heartbeat writes out of viewport callbacks.
+        snapshot = instance_snapshot
+        while @instance_registry_queue.length > 1
+          @instance_registry_queue.pop(true)
+        end
+        @instance_registry_queue << snapshot
+        true
+      rescue ThreadError
+        retry
+      rescue StandardError => e
+        log_exception('publish instance heartbeat', e)
+        false
+      end
+
+      def write_instance_registry_file(snapshot)
+        FileUtils.mkdir_p(INSTANCE_REGISTRY_DIR)
+        temp_path = "#{@instance_registry_path}.#{Thread.current.object_id}.tmp"
+        File.open(temp_path, 'wb') do |file|
+          file.write(JSON.pretty_generate(snapshot))
+          file.write("\n")
+          file.flush
+          file.fsync rescue nil
+        end
+        begin
+          File.rename(temp_path, @instance_registry_path)
+        rescue Errno::EACCES, Errno::EEXIST
+          File.delete(@instance_registry_path) if File.file?(@instance_registry_path)
+          File.rename(temp_path, @instance_registry_path)
+        ensure
+          File.delete(temp_path) if File.file?(temp_path)
+        end
+      end
+
+      def stop_instance_registry
+        if @instance_heartbeat_timer_id
+          UI.stop_timer(@instance_heartbeat_timer_id)
+          @instance_heartbeat_timer_id = nil
+        end
+        queue = @instance_registry_queue
+        writer = @instance_registry_writer
+        if queue && writer && writer.alive?
+          queue << :delete
+          queue << :stop
+          writer.join(1.0) unless writer == Thread.current
+        end
+        File.delete(@instance_registry_path) if @instance_registry_path && File.file?(@instance_registry_path)
+        @instance_registry_queue = nil
+        @instance_registry_writer = nil
+        @instance_registry_started = false
+        true
+      rescue StandardError => e
+        log_exception('stop instance registry', e)
+        false
+      end
+
       def initialize_state
+        initialize_instance_identity
         @command_queue ||= Queue.new
         @queue_mutex ||= Mutex.new
         @result_queue_count ||= 0
@@ -1427,7 +1592,8 @@ module AI_DG
       def bind_server
         @server_socket = TCPServer.new(HOST, PORT)
         @server_socket.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
-        log("TCPServer bound to #{HOST}:#{PORT}")
+        @bound_port = @server_socket.addr[1]
+        log("TCPServer bound to #{HOST}:#{@bound_port}")
       end
 
       def start_accept_thread
@@ -1466,6 +1632,7 @@ module AI_DG
         result_queue = Queue.new
         raise IOError, 'Bridge command queue is unavailable' unless @command_queue
         request = JSON.parse(line)
+        request['bridge_transport'] = 'tcp'
         record_event('mcp_connected', { status: 'SUCCESS', request_id: request['request_id'], session_id: request['session_id'], bytes_in: line.bytesize, stage: 'MCP' })
         @command_queue << { request: request, result_queue: result_queue }
         @queue_mutex.synchronize { @result_queue_count = @result_queue_count.to_i + 1 }
@@ -1565,6 +1732,7 @@ module AI_DG
         socket = @server_socket
         @server_socket = nil
         socket.close if socket && !socket.closed?
+        @bound_port = nil
       rescue StandardError => e
         log_exception('close server', e)
       end
@@ -1578,6 +1746,7 @@ module AI_DG
         @running = false
         stop_dispatch_timer
         stop_idle_worker
+        stop_instance_registry
         close_server_socket
         close_client_sockets
         @server_thread = nil
@@ -1655,5 +1824,9 @@ module AI_DG
 
     # Deliberately not `start`: plugin discovery must not bind or block.
     schedule_start
+    # A graceful source reload can enter here while an older bridge socket is
+    # already live. Bootstrap the new registry immediately so the first
+    # router-aware MCP process can discover that existing SketchUp instance.
+    start_instance_registry if runtime_active? && !@instance_registry_started
   end
 end

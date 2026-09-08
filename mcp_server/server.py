@@ -16,19 +16,32 @@ from sketchup_analyzer import analyze_file
 from logging_utils import ensure_log_files, log_event
 from workflow_profile import build_profile
 from tool_exposure import TOOL_TO_GROUP, apply_profile
+from instance_router import RouterFailure, SketchUpInstanceRouter
 
 mcp = FastMCP("AI-DG Universal Bridge")
 
-SKETCHUP_HOST = os.environ.get("AI_DG_SKETCHUP_HOST", "127.0.0.1")
-try:
-    SKETCHUP_PORT = int(os.environ.get("AI_DG_SKETCHUP_PORT", "9876"))
-except ValueError:
-    SKETCHUP_PORT = 9876
-ROOT_DIR = Path("E:/AI-DG")
+ROOT_DIR = Path(os.environ.get("AI_DG_ROOT", str(Path(__file__).resolve().parents[1]))).resolve()
 DEVELOPER_MODE = os.environ.get("AI_DG_DEVELOPER_MODE", "0") == "1"
 SESSION_ID = os.environ.get("AI_DG_SESSION_ID", f"mcp-session-{uuid.uuid4()}")
 DEFAULT_BRIDGE_TIMEOUT = 15.0
+INSTANCE_ROUTER = SketchUpInstanceRouter(ROOT_DIR)
+MODEL_WRITE_ACTIONS = frozenset(
+    {
+        "create_primitive_box",
+        "create_semantic_item",
+        "create_group",
+        "create_component",
+        "transform_entity",
+        "apply_material",
+        "set_tag",
+        "undo",
+    }
+)
 TOOL_REGISTRY = [
+    {"id": "sketchup_list_instances", "permission": "sketchup.read", "risk": "LOW"},
+    {"id": "sketchup_select_instance", "permission": "sketchup.target", "risk": "LOW"},
+    {"id": "sketchup_get_active_instance", "permission": "sketchup.read", "risk": "LOW"},
+    {"id": "sketchup_clear_instance", "permission": "sketchup.target", "risk": "LOW"},
     {"id": "sketchup_ping", "permission": "sketchup.read", "risk": "LOW"},
     {"id": "sketchup_health", "permission": "sketchup.read", "risk": "LOW"},
     {"id": "sketchup_get_runtime_state", "permission": "runtime.read", "risk": "LOW"},
@@ -112,21 +125,35 @@ ACTIVE_TOOL_EXPOSURE: dict[str, Any] = {
     "schema_reduction_percent": 100.0,
 }
 
+def _target_identity(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "instance_id": record["instance_id"],
+        "pid": record["pid"],
+        "boot_id": record.get("boot_id"),
+        "port": record["port"],
+    }
+
+
 def send_sketchup_cmd(action: str, data: Optional[Dict[str, Any]] = None, timeout: float = DEFAULT_BRIDGE_TIMEOUT) -> Dict[str, Any]:
     request_id = f"mcp-{uuid.uuid4()}"
     started = time.perf_counter()
+    target_record: dict[str, Any] | None = None
+    target: dict[str, Any] | None = None
     ensure_log_files()
     log_event("mcp", "request_started", request_id=request_id, session_id=SESSION_ID, action=action)
     try:
+        target_record = INSTANCE_ROUTER.resolve(require_explicit=action in MODEL_WRITE_ACTIONS)
+        target = INSTANCE_ROUTER.public_target(target_record)
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(timeout)
-            s.connect((SKETCHUP_HOST, SKETCHUP_PORT))
+            s.connect((str(target_record["host"]), int(target_record["port"])))
             payload = json.dumps({
                 "action": action,
                 "data": data or {},
                 "request_id": request_id,
                 "session_id": SESSION_ID,
                 "mcp_started_at": time.time(),
+                "target": _target_identity(target_record),
             }) + "\n"
             s.sendall(payload.encode("utf-8"))
             response_bytes = bytearray()
@@ -146,51 +173,101 @@ def send_sketchup_cmd(action: str, data: Optional[Dict[str, Any]] = None, timeou
             if not line:
                 raise ConnectionError("BRIDGE_EMPTY_RESPONSE")
             response = json.loads(line.decode("utf-8"))
+            response_target = response.get("target") if isinstance(response.get("target"), dict) else {}
+            expected = _target_identity(target_record)
+            if any(str(response_target.get(key)) != str(value) for key, value in expected.items()):
+                raise RouterFailure(
+                    "TARGET_IDENTITY_MISMATCH",
+                    "SketchUp bridge identity did not match the selected target",
+                    {"expected": expected, "received": response_target},
+                )
+            response["target"] = target
             response.setdefault("request_id", request_id)
             response.setdefault("session_id", SESSION_ID)
             response.setdefault("mcp_latency_ms", round((time.perf_counter() - started) * 1000, 2))
             log_event("mcp", "request_finished", request_id=request_id, session_id=SESSION_ID, action=action, status=response.get("status"), latency_ms=response.get("mcp_latency_ms"))
             log_event("tools", "tool_finished", request_id=request_id, action=action, status=response.get("status"), latency_ms=response.get("mcp_latency_ms"))
             return response
+    except RouterFailure as exc:
+        result = exc.as_result()
+        result.update({"action": action, "request_id": request_id, "session_id": SESSION_ID})
+        if target:
+            result["target"] = target
+        log_event("mcp", "request_finished", request_id=request_id, session_id=SESSION_ID, action=action, status="BLOCKED", error=exc.code)
+        return result
     except ConnectionRefusedError:
         result = {
             "status": "error",
-            "error_code": "BRIDGE_NOT_READY",
-            "error": "BRIDGE_NOT_READY: SketchUp bridge is not listening on 127.0.0.1:9876. "
-                     "SketchUp was not restarted or terminated."
+            "error_code": "TARGET_OFFLINE",
+            "error": "TARGET_OFFLINE: selected SketchUp bridge did not accept the connection",
+            "target": target,
         }
-        log_event("mcp", "request_finished", request_id=request_id, session_id=SESSION_ID, action=action, status="ERROR", error="BRIDGE_NOT_READY")
-        log_event("errors", "bridge_unavailable", request_id=request_id, action=action)
+        log_event("mcp", "request_finished", request_id=request_id, session_id=SESSION_ID, action=action, status="ERROR", error="TARGET_OFFLINE")
+        log_event("errors", "bridge_unavailable", request_id=request_id, action=action, instance_id=target_record.get("instance_id") if target_record else None)
         return result
     except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, ConnectionError) as e:
         result = {
             "status": "error",
-            "error_code": "BRIDGE_DISCONNECTED",
-            "error": f"BRIDGE_DISCONNECTED: {e.__class__.__name__}",
+            "error_code": "TARGET_OFFLINE",
+            "error": f"TARGET_OFFLINE: {e.__class__.__name__}",
             "action": action,
             "request_id": request_id,
             "session_id": SESSION_ID,
+            "target": target,
         }
-        log_event("mcp", "request_finished", request_id=request_id, session_id=SESSION_ID, action=action, status="ERROR", error="BRIDGE_DISCONNECTED")
-        log_event("errors", "bridge_disconnected", request_id=request_id, action=action)
+        log_event("mcp", "request_finished", request_id=request_id, session_id=SESSION_ID, action=action, status="ERROR", error="TARGET_OFFLINE")
+        log_event("errors", "bridge_disconnected", request_id=request_id, action=action, instance_id=target_record.get("instance_id") if target_record else None)
         return result
     except socket.timeout:
-        result = {"status": "error", "error_code": "READ_TIMEOUT", "error": "BRIDGE_TIMEOUT", "action": action, "request_id": request_id, "session_id": SESSION_ID}
+        result = {"status": "error", "error_code": "READ_TIMEOUT", "error": "BRIDGE_TIMEOUT", "action": action, "request_id": request_id, "session_id": SESSION_ID, "target": target}
         log_event("mcp", "request_finished", request_id=request_id, session_id=SESSION_ID, action=action, status="TIMEOUT", error="BRIDGE_TIMEOUT")
         log_event("errors", "bridge_timeout", request_id=request_id, action=action, timeout=timeout)
         return result
     except Exception as e:
-        result = {"status": "error", "error_code": "INTERNAL_ERROR", "error": str(e), "request_id": request_id, "session_id": SESSION_ID}
+        result = {"status": "error", "error_code": "INTERNAL_ERROR", "error": str(e), "request_id": request_id, "session_id": SESSION_ID, "target": target}
         log_event("mcp", "request_finished", request_id=request_id, session_id=SESSION_ID, action=action, status="ERROR", error=e.__class__.__name__)
         log_event("errors", "mcp_error", request_id=request_id, action=action, error=e.__class__.__name__)
         return result
 
 @mcp.tool()
+def sketchup_list_instances() -> str:
+    """List independently registered SketchUp processes and their target identity."""
+    rows = [INSTANCE_ROUTER.public_target(row) | {"age_seconds": row.get("age_seconds")} for row in INSTANCE_ROUTER.list_instances()]
+    return json.dumps({"status": "ok", "count": len(rows), "instances": rows}, indent=2, ensure_ascii=False)
+
+
+@mcp.tool()
+def sketchup_select_instance(instance_id: str) -> str:
+    """Select the exact SketchUp process used by subsequent tools in this MCP session."""
+    try:
+        target = INSTANCE_ROUTER.select(instance_id)
+        return json.dumps({"status": "ok", "target": INSTANCE_ROUTER.public_target(target)}, indent=2, ensure_ascii=False)
+    except RouterFailure as exc:
+        return json.dumps(exc.as_result(), indent=2, ensure_ascii=False)
+
+
+@mcp.tool()
+def sketchup_get_active_instance() -> str:
+    """Read the sticky target for this MCP process without choosing a fallback."""
+    target = INSTANCE_ROUTER.selected()
+    if not INSTANCE_ROUTER.selected_instance_id:
+        return json.dumps({"status": "ok", "target": None}, indent=2, ensure_ascii=False)
+    if not target or target.get("status") != "ONLINE":
+        return json.dumps({"status": "error", "error_code": "TARGET_OFFLINE", "error": "Selected SketchUp target is offline", "instance_id": INSTANCE_ROUTER.selected_instance_id}, indent=2, ensure_ascii=False)
+    return json.dumps({"status": "ok", "target": INSTANCE_ROUTER.public_target(target)}, indent=2, ensure_ascii=False)
+
+
+@mcp.tool()
+def sketchup_clear_instance() -> str:
+    """Clear the MCP session's target; this does not stop or modify SketchUp."""
+    previous = INSTANCE_ROUTER.clear()
+    return json.dumps({"status": "ok", "cleared_instance_id": previous, "target": None}, indent=2, ensure_ascii=False)
+
+
+@mcp.tool()
 def sketchup_ping() -> str:
     res = send_sketchup_cmd("ping")
-    if res.get("status") == "ok":
-        return f"Ket noi SketchUp thanh cong! Version: {res.get('sketchup_version')}, File: {res.get('model_title')}"
-    return f"Loi ket noi: {res.get('error')}"
+    return json.dumps(res, indent=2, ensure_ascii=False)
 
 if DEVELOPER_MODE:
     @mcp.tool()
@@ -203,9 +280,7 @@ if DEVELOPER_MODE:
 @mcp.tool()
 def sketchup_get_model_summary() -> str:
     res = send_sketchup_cmd("get_model_info")
-    if res.get("status") == "ok":
-        return json.dumps(res.get("data"), indent=2, ensure_ascii=False)
-    return f"Loi: {res.get('error')}"
+    return json.dumps(res, indent=2, ensure_ascii=False)
 
 
 @mcp.tool()
@@ -343,6 +418,8 @@ def ai_dg_runtime_status() -> str:
         "mcp": "CONNECTED" if result.get("status") == "ok" else "DISCONNECTED",
         "session_id": SESSION_ID,
         "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+        "target": result.get("target"),
+        "error_code": result.get("error_code"),
         "error": result.get("error"),
     }
     return json.dumps(result, ensure_ascii=False)
@@ -533,6 +610,11 @@ def ai_dg_execute_build_plan(run_id: str, project_path: str = "E:/AI-DG", review
     normalized_review = str(review_status or "OPEN").upper()
     if normalized_review not in {"OPEN", "APPROVED"}:
         return json.dumps({"status": "error", "error": "INVALID_REVIEW_STATUS"}, ensure_ascii=False)
+    if confirm_write:
+        try:
+            INSTANCE_ROUTER.resolve(require_explicit=True)
+        except RouterFailure as exc:
+            return json.dumps(exc.as_result(), ensure_ascii=False)
     plan_path, denied = _pipeline_read_path(root, run_id, "plan")
     if denied:
         return json.dumps(denied, ensure_ascii=False)
@@ -675,19 +757,9 @@ def sketchup_capture_viewport(output_image_path: str, view_mode: str = "iso") ->
 
 @mcp.tool()
 def sketchup_create_box(width_mm: float, depth_mm: float, height_mm: float, name: str = "AI_DG_BOX", origin_x: float = 0.0, origin_y: float = 0.0, origin_z: float = 0.0) -> str:
-    # Enforce the normal-mode read-only default at the MCP boundary as well as
-    # inside Ruby. This prevents a stale SketchUp runtime from receiving a
-    # write request after the MCP client has already observed read_only mode.
-    mode_res = send_sketchup_cmd("get_runtime_state")
-    mode_data = mode_res.get("data", {}) if isinstance(mode_res, dict) else {}
-    if mode_res.get("status") != "ok":
-        return json.dumps(mode_res, ensure_ascii=False)
-    if mode_data.get("access_mode") != "write_enabled":
-        return json.dumps({
-            "status": "error",
-            "error": "READ_ONLY_MODE: enable Write mode in AI-DG Control Center first",
-            "access_mode": mode_data.get("access_mode", "read_only"),
-        }, ensure_ascii=False)
+    denied = _write_mode_error()
+    if denied:
+        return denied
     payload = {
         "width_mm": width_mm,
         "depth_mm": depth_mm,
@@ -696,19 +768,21 @@ def sketchup_create_box(width_mm: float, depth_mm: float, height_mm: float, name
         "origin": [origin_x, origin_y, origin_z]
     }
     res = send_sketchup_cmd("create_primitive_box", payload)
-    if res.get("status") == "ok":
-        return f"Da tao khoi hop: {res.get('name', name)}"
-    return f"Loi: {res.get('error')}"
+    return json.dumps(res, ensure_ascii=False)
 
 
 def _write_mode_error() -> str | None:
     """Return a structured write-mode error before any model action is dispatched."""
+    try:
+        INSTANCE_ROUTER.resolve(require_explicit=True)
+    except RouterFailure as exc:
+        return json.dumps(exc.as_result(), ensure_ascii=False)
     mode_res = send_sketchup_cmd("get_runtime_state")
     mode_data = mode_res.get("data", {}) if isinstance(mode_res, dict) else {}
     if mode_res.get("status") != "ok":
         return json.dumps(mode_res, ensure_ascii=False)
     if mode_data.get("access_mode") != "write_enabled":
-        return json.dumps({"status": "error", "error": "READ_ONLY_MODE: enable Write mode in AI-DG Control Center first", "access_mode": mode_data.get("access_mode", "read_only")}, ensure_ascii=False)
+        return json.dumps({"status": "error", "error": "READ_ONLY_MODE: enable Write mode in AI-DG Control Center first", "access_mode": mode_data.get("access_mode", "read_only"), "target": mode_res.get("target")}, ensure_ascii=False)
     return None
 
 

@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,7 @@ MAX_EVENT_QUEUE = 500
 REQUEST_TIMEOUT = 60.0
 TURN_TIMEOUT = 30 * 60.0
 PROTOCOL_VERSION = 1
+INSTANCE_ID_RE = re.compile(r"^su-[0-9]+-[a-f0-9]{8,32}$", re.IGNORECASE)
 
 
 def now_ms() -> int:
@@ -314,11 +316,15 @@ async def terminate_process_tree(process: asyncio.subprocess.Process) -> None:
 
 
 class AgentHost:
-    def __init__(self, root: Path, auto_install_cline: bool = True):
+    def __init__(self, root: Path, auto_install_cline: bool = True, instance_id: str | None = None):
         self.root = root.resolve()
+        self.instance_id = str(instance_id or "").strip() or None
+        if self.instance_id and not INSTANCE_ID_RE.fullmatch(self.instance_id):
+            raise ValueError("INVALID_SKETCHUP_INSTANCE_ID")
         self.auto_install_cline = auto_install_cline
-        self.runtime_dir = self.root / "OUTPUT" / "runtime" / "agent-host"
-        self.mapping_path = self.root / "OUTPUT" / "runtime" / "agent-sessions.json"
+        scoped_instance_id = self.instance_id or "standalone"
+        self.runtime_dir = self.root / "OUTPUT" / "runtime" / "agent-host" / scoped_instance_id
+        self.mapping_path = self.root / "OUTPUT" / "runtime" / "agent-sessions" / f"{scoped_instance_id}.json"
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.runtimes: dict[str, JsonRpcProcess] = {}
         self.sessions: dict[str, dict[str, Any]] = self._load_mapping()
@@ -393,8 +399,14 @@ class AgentHost:
         for candidate in candidates:
             if not candidate:
                 continue
-            if Path(candidate).is_file() or shutil.which(candidate):
-                return candidate
+            try:
+                if Path(candidate).is_file() or shutil.which(candidate):
+                    return candidate
+            except OSError:
+                # A managed host can expose a known installation path while
+                # denying metadata access to it. Continue to the next safe
+                # candidate instead of preventing Agent Host startup.
+                continue
         return sys.executable
 
     def mcp_definition(self) -> dict[str, Any]:
@@ -587,6 +599,9 @@ class AgentHost:
         command.extend(["-c", f"mcp_servers.ai-dg.command={json.dumps(str(mcp.get('command', self.python_command())))}"])
         command.extend(["-c", f"mcp_servers.ai-dg.args={json.dumps(list(mcp.get('args', [])))}"])
         command.extend(["-c", 'mcp_servers.ai-dg.env.AI_DG_TOOL_PROFILE="minimal"'])
+        command.extend(["-c", f"mcp_servers.ai-dg.env.AI_DG_ROOT={json.dumps(str(self.root))}"])
+        if self.instance_id:
+            command.extend(["-c", f"mcp_servers.ai-dg.env.AI_DG_SKETCHUP_INSTANCE_ID={json.dumps(self.instance_id)}"])
         return command
 
     def cline_mcp_path(self) -> Path:
@@ -760,7 +775,9 @@ class AgentHost:
 
     def acp_mcp_servers(self) -> list[dict[str, Any]]:
         mcp = self.mcp_definition()
-        env = {**dict(mcp.get("env", {})), "AI_DG_TOOL_PROFILE": "minimal"}
+        env = {**dict(mcp.get("env", {})), "AI_DG_TOOL_PROFILE": "minimal", "AI_DG_ROOT": str(self.root)}
+        if self.instance_id:
+            env["AI_DG_SKETCHUP_INSTANCE_ID"] = self.instance_id
         return [{"name": "ai-dg", "command": str(mcp.get("command", self.python_command())),
                  "args": list(mcp.get("args", [])),
                  "env": [{"name": key, "value": str(value)} for key, value in env.items()]}]
@@ -962,6 +979,7 @@ class AgentHost:
             "host": "READY" if not self._shutdown else "STOPPING",
             "pid": os.getpid(),
             "root": str(self.root),
+            "instance_id": self.instance_id,
             "codex": {"available": bool(self.codex_path()), "pid": self.runtimes.get("codex").pid if self.runtimes.get("codex") else None, "alive": self.runtimes.get("codex").alive if self.runtimes.get("codex") else False},
             "cline": {"available": bool(self.cline_path()), "pid": self.runtimes.get("cline").pid if self.runtimes.get("cline") else None, "alive": self.runtimes.get("cline").alive if self.runtimes.get("cline") else False, "install_state": self.cline_install_state},
             "sessions_path": str(self.mapping_path),
@@ -1066,13 +1084,14 @@ class AgentHost:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="AI-DG Codex/Cline persistent host")
     parser.add_argument("--root", default=os.environ.get("AI_DG_ROOT", str(Path(__file__).resolve().parents[1])))
+    parser.add_argument("--instance-id", default=os.environ.get("AI_DG_SKETCHUP_INSTANCE_ID", ""))
     parser.add_argument("--no-auto-install-cline", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    host = AgentHost(Path(args.root), auto_install_cline=not args.no_auto_install_cline)
+    host = AgentHost(Path(args.root), auto_install_cline=not args.no_auto_install_cline, instance_id=args.instance_id)
     try:
         return asyncio.run(host.run())
     except KeyboardInterrupt:

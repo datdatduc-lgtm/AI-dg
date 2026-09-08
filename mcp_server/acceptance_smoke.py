@@ -45,7 +45,7 @@ async def main() -> int:
         async with ClientSession(read, write) as session:
             await session.initialize()
             names = {tool.name for tool in (await session.list_tools()).tools}
-            required = {"sketchup_health", "sketchup_get_selection", "sketchup_get_camera", "aidg_write_text_guarded", "ai_dg_source_ingest", "ai_dg_pipeline_run", "ai_dg_pipeline_artifacts", "ai_dg_review_queue", "ai_dg_model_spec", "ai_dg_build_plan", "ai_dg_execute_build_plan", "ai_dg_verification", "sketchup_get_semantic_item", "sketchup_create_semantic_item", "sketchup_create_component", "sketchup_create_cabinet", "sketchup_create_panel", "sketchup_create_partition", "sketchup_create_shelf", "sketchup_create_door", "sketchup_create_drawer", "sketchup_create_countertop", "sketchup_create_component_from_spec", "sketchup_transform_entity", "sketchup_apply_material", "sketchup_set_tag", "sketchup_undo"}
+            required = {"sketchup_list_instances", "sketchup_select_instance", "sketchup_get_active_instance", "sketchup_clear_instance", "sketchup_health", "sketchup_get_selection", "sketchup_get_camera", "aidg_write_text_guarded", "ai_dg_source_ingest", "ai_dg_pipeline_run", "ai_dg_pipeline_artifacts", "ai_dg_review_queue", "ai_dg_model_spec", "ai_dg_build_plan", "ai_dg_execute_build_plan", "ai_dg_verification", "sketchup_get_semantic_item", "sketchup_create_semantic_item", "sketchup_create_component", "sketchup_create_cabinet", "sketchup_create_panel", "sketchup_create_partition", "sketchup_create_shelf", "sketchup_create_door", "sketchup_create_drawer", "sketchup_create_countertop", "sketchup_create_component_from_spec", "sketchup_transform_entity", "sketchup_apply_material", "sketchup_set_tag", "sketchup_undo"}
             legacy = {"ai_dg_agent_ask", "ai_dg_model_status", "ai_dg_model_select", "ai_dg_9router_sync_models", "ai_dg_provider_status", "ai_dg_provider_configure", "ai_dg_provider_disconnect", "ai_dg_9router_test", "ai_dg_session_save", "ai_dg_session_load"}
             discovery_ok = required <= names and not names.intersection(legacy)
             report["tests"].append({"name": "mcp_discovery_without_legacy_agent", "status": "PASS" if discovery_ok else "FAIL", "tool_count": len(names), "legacy_tools": sorted(names.intersection(legacy))})
@@ -59,6 +59,18 @@ async def main() -> int:
                 and all(row.get("enabled") is True for row in tool_rows if isinstance(row, dict))
             )
             report["tests"].append({"name": "tool_manager_enabled_metadata", "status": "PASS" if enabled_ok else "FAIL", "tool_count": len(tool_rows)})
+
+            instances = parse(await session.call_tool("sketchup_list_instances", {}))
+            online = [row for row in instances.get("instances", []) if row.get("status") == "ONLINE"]
+            requested_instance = os.environ.get("AI_DG_TEST_INSTANCE_ID", "").strip()
+            chosen = next((row for row in online if row.get("instance_id") == requested_instance), None) if requested_instance else (online[0] if len(online) == 1 else None)
+            if not chosen:
+                report["tests"].append({"name": "exact_instance_target", "status": "FAIL", "error": "AI_DG_TEST_INSTANCE_ID_REQUIRED" if len(online) > 1 else "NO_SKETCHUP_INSTANCES", "online": online})
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+                return 1
+            selected = parse(await session.call_tool("sketchup_select_instance", {"instance_id": chosen["instance_id"]}))
+            target_ok = selected.get("status") == "ok" and selected.get("target", {}).get("instance_id") == chosen["instance_id"]
+            report["tests"].append({"name": "exact_instance_target", "status": "PASS" if target_ok else "FAIL", "target": selected.get("target")})
 
             health = parse(await session.call_tool("sketchup_health", {}))
             health_ok = health.get("status") == "ok" and health.get("data", {}).get("bridge_status") == "ONLINE"
@@ -85,14 +97,15 @@ async def main() -> int:
             report["tests"].append({"name": "reload_refreshes_runtime_catalog", "status": "PASS" if reload_catalog_ok else "FAIL", "before": len(runtime_tools.get("data", [])), "after": len(runtime_tools_after.get("data", []))})
 
             model = parse(await session.call_tool("sketchup_get_model_summary", {}))
-            model_ok = isinstance(model.get("entities"), int) and isinstance(model.get("bounds_mm"), list) and len(model.get("bounds_mm")) == 3
-            report["tests"].append({"name": "official_model_read", "status": "PASS" if model_ok else "FAIL", "entities": model.get("entities"), "bounds_mm": model.get("bounds_mm")})
+            model_data = model.get("data", {})
+            model_ok = isinstance(model_data.get("entities"), int) and isinstance(model_data.get("bounds_mm"), list) and len(model_data.get("bounds_mm")) == 3 and model.get("target", {}).get("instance_id") == chosen["instance_id"]
+            report["tests"].append({"name": "official_model_read", "status": "PASS" if model_ok else "FAIL", "entities": model_data.get("entities"), "bounds_mm": model_data.get("bounds_mm"), "target": model.get("target")})
 
             selection = parse(await session.call_tool("sketchup_get_selection", {}))
             items = selection.get("data", {}).get("items")
             item = (items or [None])[0]
-            selection_ok = selection.get("status") == "ok" and isinstance(selection.get("data", {}).get("count"), int) and isinstance(items, list)
-            report["tests"].append({"name": "official_selection_entity_read", "status": "PASS" if selection_ok else "FAIL", "entity": item})
+            selection_ok = selection.get("status") == "ok" and isinstance(selection.get("data", {}).get("count"), int) and isinstance(items, list) and selection.get("target", {}).get("instance_id") == chosen["instance_id"]
+            report["tests"].append({"name": "official_selection_entity_read", "status": "PASS" if selection_ok else "FAIL", "entity": item, "target": selection.get("target")})
 
             camera = parse(await session.call_tool("sketchup_get_camera", {}))
             camera_ok = camera.get("status") == "ok" and camera.get("data", {}).get("view_class") == "Sketchup::View"
@@ -173,6 +186,12 @@ async def main() -> int:
             )
             hierarchy_status = "PASS" if hierarchy_ok else "PARTIAL" if hierarchy.get("error") == "BRIDGE_TIMEOUT" else "FAIL"
             report["tests"].append({"name": "bounded_hierarchy", "status": hierarchy_status, "elapsed_ms": round((time.perf_counter() - hierarchy_started) * 1000, 1), "error": hierarchy.get("error"), "returned": returned, "max_items": max_items, "truncated": hierarchy_data.get("truncated")})
+
+            await session.call_tool("sketchup_clear_instance", {})
+            unselected_write = parse(await session.call_tool("sketchup_create_box", {"width_mm": 10, "depth_mm": 10, "height_mm": 10, "name": "MUST_NOT_CREATE_WITHOUT_TARGET"}))
+            exact_write_target_ok = unselected_write.get("error_code") == "TARGET_REQUIRED" and unselected_write.get("status") == "error"
+            report["tests"].append({"name": "write_requires_exact_instance", "status": "PASS" if exact_write_target_ok else "FAIL", "error_code": unselected_write.get("error_code")})
+            await session.call_tool("sketchup_select_instance", {"instance_id": chosen["instance_id"]})
 
     statuses = [test["status"] for test in report["tests"]]
     if "FAIL" in statuses:

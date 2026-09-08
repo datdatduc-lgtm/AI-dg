@@ -232,6 +232,7 @@
     $('settings-codex').textContent = codex.alive ? 'Đang chạy' : (codex.available ? 'Sẵn sàng' : 'Chưa có');
     $('settings-cline').textContent = cline.alive ? 'Đang chạy' : (cline.install_state || (cline.available ? 'Sẵn sàng' : 'Chưa có'));
     $('settings-bridge').textContent = data.bridge_status || 'UNKNOWN';
+    $('settings-instance').textContent = (data.model_title || 'Untitled') + (data.instance_id ? ' · ' + data.instance_id : '');
     $('footer-status').textContent = data.bridge_status === 'ONLINE' ? 'Bridge online' : 'Bridge ' + (data.bridge_status || 'đang khởi động');
     $('footer-dot').className = 'dot ' + (data.bridge_status === 'ONLINE' ? 'good' : 'bad');
     if (data.developer_mode !== undefined) applyDeveloperMode({ developer_mode: data.developer_mode });

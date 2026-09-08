@@ -83,7 +83,7 @@ module AI_DG
       end
 
       def agent_host
-        @agent_host ||= AI_DG::Bridge::AgentHostClient.new(ROOT)
+        @agent_host ||= AI_DG::Bridge::AgentHostClient.new(ROOT, Bridge.instance_id)
       end
 
       def close_session

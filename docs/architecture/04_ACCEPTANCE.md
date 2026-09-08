@@ -12,6 +12,12 @@
 
 ## SketchUp gates
 
+- Every SketchUp process owns a fresh instance ID, boot ID and dynamic port.
+- `sketchup_list_instances` reports every live process independently.
+- With two or more processes, no SketchUp call chooses a target implicitly.
+- Model writes require an explicitly selected instance even when only one is online.
+- A dead selected target returns `TARGET_OFFLINE` and never falls back.
+- Every bridge response contains validated instance/PID/boot/port evidence.
 - Both runtimes can call `sketchup_get_selection` through the same AI-DG MCP
   launcher and receive the current official Ruby bridge result.
 - Read operations do not change the model or camera.
@@ -35,3 +41,5 @@
 - MCP discovery and live bridge smoke test.
 - Agent Host protocol contract test with fake child processes only in tests.
 - Static hard-fail scan for legacy production references.
+- Offline two-instance, target-offline and PID-reuse router contracts.
+- Live two-SketchUp isolation, visible write/read-back/undo and fail-closed checks.

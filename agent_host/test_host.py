@@ -133,6 +133,19 @@ class AgentHostContractTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mapping["documents"]["doc-5"]["codex"]["thread_id"], "thread-1")
         self.assertTrue(any(event.get("event") == "session/resume_failed" for event in self.emitted))
 
+    async def test_sketchup_instance_scopes_runtime_and_mcp_target(self) -> None:
+        scoped = AgentHost(Path(self.temp.name), auto_install_cline=False, instance_id="su-4321-a1b2c3d4")
+        self.assertEqual(scoped.mapping_path.name, "su-4321-a1b2c3d4.json")
+        self.assertEqual(scoped.runtime_dir.name, "su-4321-a1b2c3d4")
+        acp_env = {row["name"]: row["value"] for row in scoped.acp_mcp_servers()[0]["env"]}
+        self.assertEqual(acp_env["AI_DG_SKETCHUP_INSTANCE_ID"], "su-4321-a1b2c3d4")
+        command = scoped.codex_command("codex")
+        self.assertTrue(any("AI_DG_SKETCHUP_INSTANCE_ID" in item and "su-4321-a1b2c3d4" in item for item in command))
+
+    async def test_invalid_instance_id_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "INVALID_SKETCHUP_INSTANCE_ID"):
+            AgentHost(Path(self.temp.name), auto_install_cline=False, instance_id="../../shared")
+
 
 if __name__ == "__main__":
     unittest.main()

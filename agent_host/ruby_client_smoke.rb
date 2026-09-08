@@ -1,6 +1,7 @@
 require_relative '../bridge_sketchup/ai_dg_bridge/agent_host_client'
 
-client = AI_DG::Bridge::AgentHostClient.new(File.expand_path('..', __dir__))
+instance_id = "su-#{Process.pid}-a1b2c3d4"
+client = AI_DG::Bridge::AgentHostClient.new(File.expand_path('..', __dir__), instance_id)
 begin
   request_id = client.request('host/status')
   deadline = Time.now + 15
@@ -10,6 +11,7 @@ begin
     sleep 0.05 unless response
   end
   raise 'Ruby client failed to reach real host' unless response && response['status'] == 'ok'
+  raise 'Ruby client lost SketchUp instance scope' unless response.dig('data', 'instance_id') == instance_id
   puts 'RUBY_HOST_IPC_PASS'
 ensure
   client.stop

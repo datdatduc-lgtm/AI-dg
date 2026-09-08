@@ -62,6 +62,8 @@ async def main() -> int:
             await session.initialize()
             tools = {tool.name for tool in (await session.list_tools()).tools}
             required = {
+                "sketchup_list_instances",
+                "sketchup_select_instance",
                 "sketchup_health",
                 "sketchup_get_selection",
                 "sketchup_get_model_summary",
@@ -85,6 +87,14 @@ async def main() -> int:
                 and "sketchup_create_cabinet" not in tools
                 and not tools.intersection(legacy_tools)
             )
+            instances = parse(await session.call_tool("sketchup_list_instances", {}))
+            online = [row for row in instances.get("instances", []) if row.get("status") == "ONLINE"]
+            requested_instance = os.environ.get("AI_DG_TEST_INSTANCE_ID", "").strip()
+            chosen = next((row for row in online if row.get("instance_id") == requested_instance), None) if requested_instance else (online[0] if len(online) == 1 else None)
+            if not chosen:
+                print(json.dumps({"status": "BLOCKED", "error": "AI_DG_TEST_INSTANCE_ID_REQUIRED" if len(online) > 1 else "NO_SKETCHUP_INSTANCES", "instances": online}, ensure_ascii=False, indent=2))
+                return 2
+            selected = parse(await session.call_tool("sketchup_select_instance", {"instance_id": chosen["instance_id"]}))
             health = parse(await session.call_tool("sketchup_health", {}))
             selection = parse(await session.call_tool("sketchup_get_selection", {}))
             items = selection.get("data", {}).get("items")
@@ -92,6 +102,7 @@ async def main() -> int:
             ok = (
                 required <= tools
                 and minimal_exposure_ok
+                and selected.get("status") == "ok"
                 and health.get("status") == "ok"
                 and health.get("data", {}).get("bridge_status") == "ONLINE"
                 and selection.get("status") == "ok"
@@ -114,6 +125,7 @@ async def main() -> int:
                             "bridge": health.get("data", {}).get("bridge_status"),
                             "sketchup_version": health.get("data", {}).get("sketchup_version"),
                         },
+                        "target": selected.get("target"),
                         "selection": {
                             "name": item.get("name") if item else None,
                             "persistent_id": item.get("persistent_id") if item else None,
