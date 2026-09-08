@@ -1,0 +1,10 @@
+{
+  "id": "ai-dg-test",
+  "name": "AI-DG Test Plugin",
+  "version": "0.1.0",
+  "description": "Bounded read-only plugin used for enable/disable/reload acceptance tests.",
+  "entry": "plugins/ai_dg_test/plugin.py",
+  "permissions": ["sketchup.read"],
+  "tools": ["ai_dg_test_read_tool"],
+  "status": "DISABLED"
+}

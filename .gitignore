@@ -1,0 +1,46 @@
+# Local project data and generated artifacts
+INPUT/*
+WORK/*
+OUTPUT/*
+USER_PROFILE/*
+!INPUT/.gitkeep
+!WORK/.gitkeep
+!OUTPUT/.gitkeep
+
+# Python/pytest/editor caches
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+
+# Local logs, screenshots, and model files
+*.log
+*.skp
+*.skb
+*.png
+*.jpg
+*.jpeg
+
+# Credentials and local secrets
+.env
+.env.*
+*api-key*
+*apikey*
+*secret*
+*credential*
+*token*
+
+# Extracted installers and local backups
+p0_installer_extract_*/
+audit_backup_*/
+
+# Temporary test workspaces
+WORK/pytest*/
+WORK/tmp*/
+
+# Local Codex run state
+.codex/sessions/
+.codex/plugin-state.json

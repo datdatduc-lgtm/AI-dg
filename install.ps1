@@ -5,7 +5,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $source = Join-Path $repoRoot '.agents\skills\ai-dg-estimator'
-$skillsRoot = Join-Path $HOME '.agents\skills'
+$userProfileRoot = [Environment]::GetFolderPath('UserProfile')
+$skillsRoot = Join-Path $userProfileRoot '.agents\skills'
 $destination = Join-Path $skillsRoot 'ai-dg-estimator'
 
 if (-not (Test-Path $source)) {
@@ -14,14 +15,12 @@ if (-not (Test-Path $source)) {
 
 New-Item -ItemType Directory -Force -Path $skillsRoot | Out-Null
 
-if (Test-Path $destination) {
-    if (-not $Force) {
-        throw "Skill already installed at $destination. Re-run with -Force to replace it."
-    }
-    Remove-Item -Recurse -Force $destination
+if ((Test-Path $destination) -and (-not $Force)) {
+    Write-Host "Skill exists; merging AI-DG-owned files into: $destination"
 }
 
-Copy-Item -Recurse -Force $source $destination
+New-Item -ItemType Directory -Force -Path $destination | Out-Null
+Copy-Item -Recurse -Force (Join-Path $source '*') $destination
 
 Write-Host "Installed AI-dg skill to: $destination"
 Write-Host "Codex and OpenCode can both discover ~/.agents/skills/ai-dg-estimator."

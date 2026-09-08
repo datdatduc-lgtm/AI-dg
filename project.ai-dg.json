@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "project_name": "AI-DG",
+  "created_utc": "2026-08-23T05:53:36.887822+00:00",
+  "input_root": "INPUT",
+  "work_root": "WORK",
+  "output_root": "OUTPUT",
+  "rules": {
+    "input_read_only": true,
+    "reconcile_pdf_cad_skp": true,
+    "geometry_first": true,
+    "unknowns_must_remain_explicit": true
+  }
+}

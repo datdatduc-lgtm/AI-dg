@@ -1,0 +1,12 @@
+{
+  "tools": [
+    {
+      "type": "mcp",
+      "name": "ai-dg",
+      "command": [
+        "C:\\Users\\Admin\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "E:\\AI-DG\\mcp_server\\launcher.py"
+      ]
+    }
+  ]
+}
