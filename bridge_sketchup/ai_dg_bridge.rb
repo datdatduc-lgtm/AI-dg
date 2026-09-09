@@ -8,8 +8,8 @@ module AI_DG
     unless file_loaded?(__FILE__)
       main_file = File.join(File.dirname(__FILE__), 'ai_dg_bridge', 'main.rb')
       EXTENSION = SketchupExtension.new('AI-DG MCP Bridge', main_file) unless const_defined?(:EXTENSION, false)
-      EXTENSION.description = 'AI-DG Cầu nối MCP điều khiển 3D, đọc bản vẽ, xuất BOM, DXF từ AI Agent (VSCode, Codex, Cline, OpenCode, Hermes, DSH)'
-      EXTENSION.version     = '1.0.0'
+      EXTENSION.description = 'Cầu nối MCP headless tới SketchUp Ruby API chính thức. Không toolbar, không HtmlDialog, không AI runtime nhúng.'
+      EXTENSION.version     = '1.1.0'
       EXTENSION.creator     = 'AI-DG Team'
 
       # The extension loader is intentionally the only startup entry point.

@@ -46,12 +46,11 @@ validates all four before touching `Sketchup.active_model`. Every response
 returns target evidence, which Python validates again before exposing the
 result to Codex/Cline.
 
-## Agent Host isolation
+## External client isolation
 
-Each in-SketchUp Agent Host receives the owning SketchUp `instance_id`.
-Runtime state and native session mappings are stored under instance-scoped
-paths. The same instance ID is injected into the MCP environment used by the
-embedded Codex App Server and Cline ACP session.
+The SketchUp extension launches no Agent Host or model runtime. Each external
+MCP process keeps its own sticky target. An optional external Agent Host may
+inject `AI_DG_SKETCHUP_INSTANCE_ID`, but it is not installed in SketchUp.
 
 ## Remaining live gates
 
@@ -70,6 +69,7 @@ Run the exact two-process gate with:
 python mcp_server/multi_instance_acceptance.py <instance-a> <instance-b>
 ```
 
-The default is read-only. Add `--write-probe` only after enabling Write mode
-in both exact SketchUp windows. Native SketchUp confirmation remains required;
-the probe verifies A/B entity isolation and undoes successful probes.
+The default is read-only. Before `--write-probe`, select each exact instance
+and call `sketchup_set_write_mode(mode="write_enabled", confirm=true)` through
+MCP, approving the native prompt in the matching SketchUp process. Each probe
+and undo also requires native confirmation.

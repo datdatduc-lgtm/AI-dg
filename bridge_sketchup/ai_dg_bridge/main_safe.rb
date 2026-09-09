@@ -14,7 +14,6 @@ require 'digest'
 require 'uri'
 require 'securerandom'
 require_relative 'geometry_builder'
-require_relative 'toolbar'
 
 module AI_DG
   module Bridge
@@ -34,7 +33,7 @@ module AI_DG
     INSTANCE_REGISTRY_DIR = 'E:/AI-DG/OUTPUT/runtime/sketchup-instances' unless const_defined?(:INSTANCE_REGISTRY_DIR, false)
     INSTANCE_HEARTBEAT_INTERVAL = 2.0 unless const_defined?(:INSTANCE_HEARTBEAT_INTERVAL, false)
     remove_const(:LOG_FILES) if const_defined?(:LOG_FILES, false)
-    LOG_FILES = %w[bridge mcp agent tools runtime errors].freeze
+    LOG_FILES = %w[bridge mcp tools runtime errors].freeze
     TRACE_LIMIT = 200 unless const_defined?(:TRACE_LIMIT, false)
     DEFAULT_ACCESS_MODE = 'read_only' unless const_defined?(:DEFAULT_ACCESS_MODE, false)
     DEVELOPER_MODE = ENV.fetch('AI_DG_DEVELOPER_MODE', '0') == '1' unless const_defined?(:DEVELOPER_MODE, false)
@@ -76,13 +75,8 @@ module AI_DG
       { id: 'sketchup_get_camera', permission: 'sketchup.read', risk: 'LOW' },
       { id: 'sketchup_get_bounds', permission: 'sketchup.read', risk: 'LOW' },
       { id: 'sketchup_get_trace', permission: 'runtime.read', risk: 'LOW' },
-      { id: 'sketchup_get_toolbar_info', permission: 'ui.read', risk: 'LOW' },
       { id: 'sketchup_list_runtime_tools', permission: 'runtime.read', risk: 'LOW' },
-      { id: 'sketchup_list_runtime_skills', permission: 'runtime.read', risk: 'LOW' },
-      { id: 'sketchup_list_runtime_plugins', permission: 'runtime.read', risk: 'LOW' },
-      { id: 'ai_dg_load_skill', permission: 'filesystem.read', risk: 'LOW' },
-      { id: 'ai_dg_plugin_set_enabled', permission: 'filesystem.write', risk: 'MEDIUM' },
-      { id: 'ai_dg_plugin_reload', permission: 'plugin.reload', risk: 'MEDIUM' },
+      { id: 'sketchup_set_write_mode', permission: 'sketchup.write_mode', risk: 'HIGH' },
       { id: 'sketchup_capture_viewport', permission: 'filesystem.write', risk: 'MEDIUM' },
       { id: 'sketchup_create_box', permission: 'sketchup.write', risk: 'MEDIUM' },
       { id: 'sketchup_create_group', permission: 'sketchup.write', risk: 'MEDIUM' },
@@ -157,7 +151,6 @@ module AI_DG
     if defined?(Sketchup::AppObserver)
       class AppObserver < Sketchup::AppObserver
         def onQuit
-          ControlCenter.close_session if defined?(ControlCenter)
           Bridge.stop
         end
 
@@ -264,14 +257,10 @@ module AI_DG
                    { status: 'ok', data: code_view_snapshot }
                  when 'get_logs'
                    { status: 'ok', data: logs_snapshot(data) }
-                 when 'get_toolbar_info'
-                    { status: 'ok', data: toolbar_info }
-                  when 'list_tools'
+                 when 'list_tools'
                     { status: 'ok', data: tool_catalog_snapshot }
-                  when 'list_skills'
-                    { status: 'ok', data: skill_catalog_snapshot }
-                  when 'list_plugins'
-                    { status: 'ok', data: plugin_catalog_snapshot }
+                 when 'set_write_mode'
+                   request_access_mode(data)
                   when 'reload_runtime'
                     reload_runtime_source
                   when 'capture_viewport'
@@ -341,7 +330,6 @@ module AI_DG
         log("#{stage_name}: start begin")
 
         return partial_start(2, 'state initialized') if DEBUG_STAGE == 2
-        ensure_toolbar
         attach_app_observer
         attach_observers(Sketchup.active_model)
         create_dispatch_timer
@@ -411,6 +399,22 @@ module AI_DG
         normalized
       end
 
+      def request_access_mode(data)
+        requested = data['mode'].to_s
+        raise ArgumentError, 'INVALID_WRITE_MODE' unless %w[read_only write_enabled].include?(requested)
+
+        if requested == 'write_enabled'
+          raise ArgumentError, 'WRITE_MODE_CONFIRMATION_REQUIRED' unless data['confirm'] == true
+
+          approved = UI.messagebox(
+            'Cho phép MCP thay đổi model trong tiến trình SketchUp này? Mỗi thao tác ghi vẫn yêu cầu xác nhận riêng.',
+            MB_YESNO
+          )
+          raise RuntimeError, 'USER_DECLINED_WRITE_MODE' unless approved == IDYES
+        end
+        { status: 'ok', access_mode: set_access_mode(requested) }
+      end
+
       def instance_id
         initialize_instance_identity
         @instance_id
@@ -460,22 +464,12 @@ module AI_DG
           bridge_status: runtime_active? ? 'ONLINE' : 'STARTING',
           access_mode: access_mode,
           developer_mode: DEVELOPER_MODE,
-          agent_runtime: {
-            codex: 'DELEGATED_TO_CODEX_APP_SERVER',
-            cline: 'DELEGATED_TO_CLINE_ACP'
-          },
            bridge_source: __FILE__,
            bridge_source_sha256: source_sha256,
            reload_generation: (@reload_generation || 0),
            active_tool: active_trace_tool,
-           active_skill: @active_skill,
-           active_plugin: @active_plugin,
-           llm_request_state: (@llm_request_state || 'IDLE'),
-           token_count: @token_count,
-           cost: @cost,
            last_latency_ms: last_latency_ms,
            session_id: @last_session_id,
-           current_task: @current_task,
           command_queue: @command_queue ? @command_queue.length : 0,
            result_queue: (@queue_mutex ? @queue_mutex.synchronize { @result_queue_count.to_i } : @result_queue_count.to_i),
           uptime_seconds: @runtime_started_at ? (now - @runtime_started_at).round(1) : 0,
@@ -483,9 +477,7 @@ module AI_DG
           last_error: @last_error,
           health: {
             bridge: runtime_active? ? 'ONLINE' : 'STARTING',
-            mcp: mcp_status,
-            agent: current_agent_status,
-            agent_runtime: 'NATIVE_RUNTIME'
+            mcp: mcp_status
           },
           errors: trace.select { |row| row[:status] == 'ERROR' },
           warnings: [],
@@ -615,64 +607,6 @@ module AI_DG
         row && row[:latency_ms]
       end
 
-      def skill_catalog_snapshot
-        roots = ['E:/AI-DG/skills', 'E:/AI-DG/.agents/skills']
-        rows = []
-        seen = {}
-        roots.each do |root|
-          Dir.glob(File.join(root, '**', 'SKILL.md')).sort.each do |path|
-            id = File.basename(File.dirname(path))
-            next if seen[id]
-
-            seen[id] = true
-            lines = File.readlines(path, encoding: 'UTF-8', invalid: :replace, undef: :replace, replace: '').first(80)
-            front = {}
-            in_front = false
-            lines.each do |line|
-              if line.strip == '---'
-                in_front = !in_front
-                next
-              end
-              next unless in_front
-
-              key, value = line.split(':', 2)
-              front[key.strip] = value.to_s.strip.gsub(/\A["']|["']\z/, '') if key && key.match?(/\A[A-Za-z0-9_-]+\z/)
-            end
-            rows << { id: id, name: front['name'] || id, description: front['description'].to_s, lazy: true, status: 'AVAILABLE' }
-          rescue StandardError => e
-            rows << { id: id, name: id, description: '', lazy: true, status: 'ERROR', error: e.message }
-          end
-        end
-        { count: rows.length, items: rows }
-      rescue StandardError => e
-        { count: 0, items: [], error: e.message }
-      end
-
-      def plugin_catalog_snapshot
-        rows = [{ id: 'ai-dg-core', name: 'AI-DG Core', version: '1.1.0-foundation', status: 'ENABLED', permissions: ['sketchup.read', 'sketchup.write', 'mcp'] }]
-        state = {}
-        ['E:/AI-DG/OUTPUT/runtime/plugin-state.json', 'E:/AI-DG/.codex/plugin-state.json'].each do |state_path|
-          next unless File.file?(state_path)
-
-          begin
-            state = JSON.parse(File.read(state_path, encoding: 'UTF-8'))
-            break
-          rescue StandardError
-            next
-          end
-        end
-        Dir.glob('E:/AI-DG/plugins/*/manifest.json').sort.each do |path|
-          payload = JSON.parse(File.read(path, encoding: 'UTF-8'))
-          payload['source'] = path
-          plugin_state = state[payload['id'].to_s]
-          payload['status'] = plugin_state['enabled'] ? 'ENABLED' : 'DISABLED' if plugin_state.is_a?(Hash) && plugin_state.key?('enabled')
-          rows << payload
-        rescue StandardError => e
-          rows << { id: File.basename(File.dirname(path)), status: 'INVALID_MANIFEST', error: e.message }
-        end
-        { count: rows.length, items: rows }
-      end
-
       # Reload the currently deployed bridge in-place.  This is deliberately
       # source reload only: it does not stop SketchUp, close the TCP server,
       # touch the model, or bypass the normal-mode eval lock.  The existing
@@ -684,17 +618,6 @@ module AI_DG
         raise LoadError, "Bridge source missing: #{source}" unless File.file?(source)
 
         load source
-        control_center = File.join(__dir__, 'control_center.rb')
-        load control_center if File.file?(control_center)
-        toolbar = File.join(__dir__, 'toolbar.rb')
-        load toolbar if File.file?(toolbar)
-        # Refresh an already-open Control Center after a graceful code reload
-        # so the deployed HTML/CSS/JS is visible without closing SketchUp or
-        # disturbing the current model/document.
-        if defined?(AI_DG::Bridge::ControlCenter) && AI_DG::Bridge::ControlCenter.respond_to?(:current_dialog)
-          dialog = AI_DG::Bridge::ControlCenter.current_dialog
-          dialog.set_file(File.join(__dir__, 'ui', 'control_center.html')) if dialog
-        end
         attach_app_observer
         attach_observers(Sketchup.active_model)
         start_instance_registry if runtime_active? && !@instance_registry_started
@@ -722,10 +645,7 @@ module AI_DG
       def code_view_snapshot
         source_files = [
           ['Ruby bridge dispatch', File.expand_path(__FILE__), 180, 120],
-          ['Ruby Control Center agent', File.join(__dir__, 'control_center.rb'), 200, 100],
-          ['Python MCP handlers', 'E:/AI-DG/mcp_server/server.py', 130, 120],
-          ['Python Agent Host', 'E:/AI-DG/agent_host/host.py', 1, 160],
-          ['Ruby Agent Host client', 'E:/AI-DG/bridge_sketchup/ai_dg_bridge/agent_host_client.rb', 1, 120]
+          ['Python MCP handlers', 'E:/AI-DG/mcp_server/server.py', 130, 120]
         ].map do |label, path, start_line, line_count|
           {
             label: label,
@@ -740,8 +660,6 @@ module AI_DG
         {
           last_mcp_request_json: (@last_request_json || '{}'),
           last_mcp_response_json: (@last_response_json || '{}'),
-          active_skill: @active_skill,
-          active_plugin: @active_plugin,
           runtime_errors: trace_snapshot({ 'limit' => TRACE_LIMIT }).select { |row| %w[ERROR TIMEOUT BLOCKED].include?(row[:status].to_s) },
           source_files: source_files
         }
@@ -1023,9 +941,9 @@ module AI_DG
       end
 
       def guard_model_write!
-        raise SecurityError, 'READ_ONLY_MODE: enable Write mode in AI-DG Control Center first' unless access_mode == 'write_enabled'
+        raise RuntimeError, 'READ_ONLY_MODE: enable write mode through MCP first' unless access_mode == 'write_enabled'
         approved = UI.messagebox('AI-DG yêu cầu thay đổi model hiện tại. Cho phép thao tác này?', MB_YESNO)
-        raise SecurityError, 'USER_DECLINED_MODEL_WRITE' unless approved == IDYES
+        raise RuntimeError, 'USER_DECLINED_MODEL_WRITE' unless approved == IDYES
       end
 
       def create_primitive_box(model, data)
@@ -1768,16 +1686,6 @@ module AI_DG
         @client_mutex && @client_mutex.synchronize { @client_sockets.any? ? 'CONNECTED' : 'DISCONNECTED' } || 'DISCONNECTED'
       rescue StandardError
         'DISCONNECTED'
-      end
-
-      def current_agent_status
-        if defined?(AI_DG::Bridge::ControlCenter) && AI_DG::Bridge::ControlCenter.respond_to?(:agent_state)
-          AI_DG::Bridge::ControlCenter.agent_state
-        else
-          'IDLE'
-        end
-      rescue StandardError
-        'IDLE'
       end
 
       def log_path

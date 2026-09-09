@@ -4,13 +4,12 @@ AI-dg is a portable Agent Skill for interior/joinery/CNC drawing understanding, 
 
 ## Current stage
 
-**Native Codex/Cline integration for SketchUp — acceptance in progress**
+**Headless SketchUp MCP bridge — acceptance in progress**
 
-SketchUp hosts a minimal workspace backed by persistent Codex App Server and
-Cline ACP processes. `agent_host/` brokers their real sessions, events and
-approvals; both use the shared AI-DG MCP launcher and SketchUp Ruby bridge.
-The former provider/chat engine is archived under `legacy/` and is not exposed
-by production MCP or UI.
+The SketchUp extension only hosts the official Ruby API bridge. It creates no
+toolbar, menu, HtmlDialog, chat, provider manager, Codex/Cline process or local
+conversation. Codex, Cline and other MCP clients run outside SketchUp and use
+the shared `mcp_server/launcher.py` endpoint.
 
 Start with the [native architecture](docs/architecture/00_NATIVE_AGENT_GOAL.md),
 [execution brief](docs/architecture/05_CODEX_EXECUTION_BRIEF.md) and
@@ -193,9 +192,10 @@ The smoke test never enables model write mode and never calls 9Router.  A
 process still has a legacy Ruby runtime loaded; reload the bridge gracefully
 after handling any unsaved model, then rerun the test.
 
-The in-SketchUp Control Center is local `UI::HtmlDialog` UI.  It reports
-runtime, flow, trace, tools, skills, plugins, model metadata and safety state;
-provider configuration is always redacted.
+The extension is headless. Use MCP tools to inspect health, list/select the
+exact SketchUp process and read model state. To enable writes, call
+`sketchup_set_write_mode(mode="write_enabled", confirm=true)`; SketchUp still
+shows a native confirmation, and every model write has its own confirmation.
 
 The prompt-driven 2D-to-3D pipeline is implemented under `pipeline/`. It
 ingests PDF/DXF/DWG/Excel/image/SKP metadata, builds the Drawing Index,
@@ -210,8 +210,8 @@ door/drawer/countertop/component operations plus official API read-back. See
 [`.codex/TEST_RESULTS.md`](.codex/TEST_RESULTS.md).
 
 Production has no provider fallback or scripted AI-DG chat. SketchUp model
-writes require an exact live instance target, native approval, AI-DG write
-mode and the in-SketchUp confirmation.
+writes require an exact live instance target, MCP/runtime approval, enabled
+write mode and native SketchUp confirmation.
 
 ## Accuracy rules
 

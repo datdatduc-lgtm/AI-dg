@@ -45,7 +45,7 @@ async def main() -> int:
         async with ClientSession(read, write) as session:
             await session.initialize()
             names = {tool.name for tool in (await session.list_tools()).tools}
-            required = {"sketchup_list_instances", "sketchup_select_instance", "sketchup_get_active_instance", "sketchup_clear_instance", "sketchup_health", "sketchup_get_selection", "sketchup_get_camera", "aidg_write_text_guarded", "ai_dg_source_ingest", "ai_dg_pipeline_run", "ai_dg_pipeline_artifacts", "ai_dg_review_queue", "ai_dg_model_spec", "ai_dg_build_plan", "ai_dg_execute_build_plan", "ai_dg_verification", "sketchup_get_semantic_item", "sketchup_create_semantic_item", "sketchup_create_component", "sketchup_create_cabinet", "sketchup_create_panel", "sketchup_create_partition", "sketchup_create_shelf", "sketchup_create_door", "sketchup_create_drawer", "sketchup_create_countertop", "sketchup_create_component_from_spec", "sketchup_transform_entity", "sketchup_apply_material", "sketchup_set_tag", "sketchup_undo"}
+            required = {"sketchup_list_instances", "sketchup_select_instance", "sketchup_get_active_instance", "sketchup_clear_instance", "sketchup_health", "sketchup_get_selection", "sketchup_get_camera", "sketchup_set_write_mode", "aidg_write_text_guarded", "ai_dg_source_ingest", "ai_dg_pipeline_run", "ai_dg_pipeline_artifacts", "ai_dg_review_queue", "ai_dg_model_spec", "ai_dg_build_plan", "ai_dg_execute_build_plan", "ai_dg_verification", "sketchup_get_semantic_item", "sketchup_create_semantic_item", "sketchup_create_component", "sketchup_create_cabinet", "sketchup_create_panel", "sketchup_create_partition", "sketchup_create_shelf", "sketchup_create_door", "sketchup_create_drawer", "sketchup_create_countertop", "sketchup_create_component_from_spec", "sketchup_transform_entity", "sketchup_apply_material", "sketchup_set_tag", "sketchup_undo"}
             legacy = {"ai_dg_agent_ask", "ai_dg_model_status", "ai_dg_model_select", "ai_dg_9router_sync_models", "ai_dg_provider_status", "ai_dg_provider_configure", "ai_dg_provider_disconnect", "ai_dg_9router_test", "ai_dg_session_save", "ai_dg_session_load"}
             discovery_ok = required <= names and not names.intersection(legacy)
             report["tests"].append({"name": "mcp_discovery_without_legacy_agent", "status": "PASS" if discovery_ok else "FAIL", "tool_count": len(names), "legacy_tools": sorted(names.intersection(legacy))})
@@ -72,28 +72,34 @@ async def main() -> int:
             target_ok = selected.get("status") == "ok" and selected.get("target", {}).get("instance_id") == chosen["instance_id"]
             report["tests"].append({"name": "exact_instance_target", "status": "PASS" if target_ok else "FAIL", "target": selected.get("target")})
 
+            write_mode_gate = parse(await session.call_tool("sketchup_set_write_mode", {"mode": "write_enabled", "confirm": False}))
+            write_mode_gate_ok = write_mode_gate.get("error") == "WRITE_MODE_CONFIRMATION_REQUIRED"
+            report["tests"].append({"name": "headless_write_mode_confirmation_gate", "status": "PASS" if write_mode_gate_ok else "FAIL", "error": write_mode_gate.get("error")})
+
             health = parse(await session.call_tool("sketchup_health", {}))
             health_ok = health.get("status") == "ok" and health.get("data", {}).get("bridge_status") == "ONLINE"
             report["tests"].append({"name": "live_bridge_health", "status": "PASS" if health_ok else "FAIL", "pid": health.get("data", {}).get("sketchup_pid"), "version": health.get("data", {}).get("sketchup_version")})
 
             runtime_tools = parse(await session.call_tool("sketchup_list_runtime_tools", {}))
-            runtime_skills = parse(await session.call_tool("sketchup_list_runtime_skills", {}))
-            runtime_plugins = parse(await session.call_tool("sketchup_list_runtime_plugins", {}))
             catalogs_ok = (
                 runtime_tools.get("status") == "ok"
                 and isinstance(runtime_tools.get("data"), list)
-                and runtime_skills.get("status") == "ok"
-                and isinstance(runtime_skills.get("data", {}).get("items"), list)
-                and runtime_plugins.get("status") == "ok"
-                and isinstance(runtime_plugins.get("data", {}).get("items"), list)
             )
-            report["tests"].append({"name": "live_runtime_catalogs", "status": "PASS" if catalogs_ok else "FAIL", "tool_count": len(runtime_tools.get("data", [])), "skill_count": runtime_skills.get("data", {}).get("count"), "plugin_count": runtime_plugins.get("data", {}).get("count")})
+            report["tests"].append({"name": "live_runtime_catalog", "status": "PASS" if catalogs_ok else "FAIL", "tool_count": len(runtime_tools.get("data", []))})
 
             reload_result = parse(await session.call_tool("sketchup_reload_runtime", {}))
             reload_ok = reload_result.get("status") == "ok" and reload_result.get("reloaded") is True and int(reload_result.get("reload_generation", 0)) >= 1
             report["tests"].append({"name": "live_graceful_runtime_reload", "status": "PASS" if reload_ok else "FAIL", "generation": reload_result.get("reload_generation"), "source_sha256_length": len(reload_result.get("source_sha256", ""))})
+            read_only = parse(await session.call_tool("sketchup_set_write_mode", {"mode": "read_only", "confirm": False}))
+            read_only_ok = read_only.get("status") == "ok" and read_only.get("access_mode") == "read_only"
+            report["tests"].append({"name": "headless_default_read_only", "status": "PASS" if read_only_ok else "FAIL", "access_mode": read_only.get("access_mode")})
             runtime_tools_after = parse(await session.call_tool("sketchup_list_runtime_tools", {}))
-            reload_catalog_ok = runtime_tools_after.get("status") == "ok" and len(runtime_tools_after.get("data", [])) >= len(runtime_tools.get("data", []))
+            runtime_ids_after = {row.get("id") for row in runtime_tools_after.get("data", []) if isinstance(row, dict)}
+            reload_catalog_ok = (
+                runtime_tools_after.get("status") == "ok"
+                and "sketchup_set_write_mode" in runtime_ids_after
+                and not runtime_ids_after.intersection({"sketchup_get_toolbar_info", "sketchup_list_runtime_skills", "sketchup_list_runtime_plugins"})
+            )
             report["tests"].append({"name": "reload_refreshes_runtime_catalog", "status": "PASS" if reload_catalog_ok else "FAIL", "before": len(runtime_tools.get("data", [])), "after": len(runtime_tools_after.get("data", []))})
 
             model = parse(await session.call_tool("sketchup_get_model_summary", {}))

@@ -92,6 +92,8 @@ BUILD_TOOLS = frozenset(
         "sketchup_apply_material",
         "sketchup_set_tag",
         "sketchup_undo",
+        "sketchup_write_mode_status",
+        "sketchup_set_write_mode",
     }
 )
 
@@ -102,12 +104,8 @@ VERIFY_TOOLS = frozenset({"ai_dg_verification"})
 DEV_TOOLS = frozenset(
     {
         "sketchup_get_trace",
-        "sketchup_get_toolbar_info",
         "sketchup_reload_runtime",
-        "sketchup_write_mode_status",
         "sketchup_list_runtime_tools",
-        "sketchup_list_runtime_skills",
-        "sketchup_list_runtime_plugins",
         "sketchup_eval_ruby",
         "ai_dg_list_plugins",
         "ai_dg_plugin_set_enabled",

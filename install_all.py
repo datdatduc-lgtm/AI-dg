@@ -86,6 +86,21 @@ def install_sketchup_plugin():
 
     src_rb = REPO_ROOT / "bridge_sketchup" / "ai_dg_bridge.rb"
     src_dir = REPO_ROOT / "bridge_sketchup" / "ai_dg_bridge"
+    headless_files = {
+        "main.rb": src_dir / "main_safe.rb",
+        "geometry_builder.rb": src_dir / "geometry_builder.rb",
+    }
+    retired_files = (
+        "helper_process.rb",
+        "toolbar.rb",
+        "control_center.rb",
+        "agent_host_client.rb",
+        "icons/ai_dg_mcp.svg",
+        "agent_host/host.py",
+        "ui/control_center.html",
+        "ui/control_center.css",
+        "ui/control_center.js",
+    )
 
     if not sketchup_roots:
         print("[!] Chưa tìm thấy thư mục SketchUp Plugins mặc định.")
@@ -100,9 +115,17 @@ def install_sketchup_plugin():
             print(f"[*] Đang cài vào: {p_dir}")
             shutil.copy2(src_rb, p_dir)
             dest_dir = p_dir / "ai_dg_bridge"
-            # Re-running the installer must be recoverable.  Merge/overwrite
-            # only AI-DG-owned files; never delete a plugin directory.
-            shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            for destination_name, source_path in headless_files.items():
+                shutil.copy2(source_path, dest_dir / destination_name)
+            for relative_path in retired_files:
+                retired_path = dest_dir / relative_path
+                if retired_path.is_file():
+                    retired_path.unlink()
+            for relative_dir in ("icons", "agent_host", "ui"):
+                retired_dir = dest_dir / relative_dir
+                if retired_dir.is_dir() and not any(retired_dir.iterdir()):
+                    retired_dir.rmdir()
             print(f"[✓] Đã cài đặt thành công cho: {p_dir.parent.parent.name}")
         except Exception as e:
             print(f"[!] Lỗi khi cài vào {p_dir}: {e}")
@@ -156,7 +179,7 @@ def generate_mcp_config():
     print("2. Với OpenCode / Codex / Hermes / DSH:")
     print(f"   Thêm Tool MCP Server trỏ tới lệnh: {python_executable} {server_script}")
     print("3. Trong SketchUp:")
-    print("   Mở SketchUp -> Toolbar 'AI-DG Estimator' sẽ tự động khởi động server lắng nghe kết nối!")
+    print("   Mở SketchUp; bridge headless tự đăng ký, không tạo toolbar hoặc cửa sổ.")
     print("=" * 60)
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ MODEL_WRITE_ACTIONS = frozenset(
         "apply_material",
         "set_tag",
         "undo",
+        "set_write_mode",
     }
 )
 TOOL_REGISTRY = [
@@ -56,12 +57,10 @@ TOOL_REGISTRY = [
     {"id": "sketchup_get_camera", "permission": "sketchup.read", "risk": "LOW"},
     {"id": "sketchup_get_bounds", "permission": "sketchup.read", "risk": "LOW"},
     {"id": "sketchup_get_trace", "permission": "runtime.read", "risk": "LOW"},
-    {"id": "sketchup_get_toolbar_info", "permission": "ui.read", "risk": "LOW"},
     {"id": "sketchup_reload_runtime", "permission": "runtime.reload", "risk": "MEDIUM"},
     {"id": "sketchup_write_mode_status", "permission": "sketchup.read", "risk": "LOW"},
+    {"id": "sketchup_set_write_mode", "permission": "sketchup.write_mode", "risk": "HIGH"},
     {"id": "sketchup_list_runtime_tools", "permission": "runtime.read", "risk": "LOW"},
-    {"id": "sketchup_list_runtime_skills", "permission": "runtime.read", "risk": "LOW"},
-    {"id": "sketchup_list_runtime_plugins", "permission": "runtime.read", "risk": "LOW"},
     {"id": "ai_dg_runtime_status", "permission": "runtime.read", "risk": "LOW"},
     {"id": "ai_dg_build_workflow_profile", "permission": "filesystem.write", "risk": "MEDIUM"},
     {"id": "ai_dg_source_ingest", "permission": "filesystem.write", "risk": "MEDIUM"},
@@ -374,12 +373,6 @@ def sketchup_get_trace(limit: int = 100) -> str:
 
 
 @mcp.tool()
-def sketchup_get_toolbar_info() -> str:
-    res = send_sketchup_cmd("get_toolbar_info")
-    return json.dumps(res, indent=2, ensure_ascii=False)
-
-
-@mcp.tool()
 def sketchup_reload_runtime() -> str:
     """Reload the deployed Ruby bridge in-place without restarting SketchUp."""
     res = send_sketchup_cmd("reload_runtime")
@@ -390,20 +383,6 @@ def sketchup_reload_runtime() -> str:
 def sketchup_list_runtime_tools() -> str:
     """Read the bridge-side tool catalog and last-run status."""
     res = send_sketchup_cmd("list_tools")
-    return json.dumps(res, indent=2, ensure_ascii=False)
-
-
-@mcp.tool()
-def sketchup_list_runtime_skills() -> str:
-    """Read lazy skill metadata visible to the in-SketchUp runtime."""
-    res = send_sketchup_cmd("list_skills")
-    return json.dumps(res, indent=2, ensure_ascii=False)
-
-
-@mcp.tool()
-def sketchup_list_runtime_plugins() -> str:
-    """Read plugin metadata visible to the in-SketchUp runtime."""
-    res = send_sketchup_cmd("list_plugins")
     return json.dumps(res, indent=2, ensure_ascii=False)
 
 
@@ -782,7 +761,7 @@ def _write_mode_error() -> str | None:
     if mode_res.get("status") != "ok":
         return json.dumps(mode_res, ensure_ascii=False)
     if mode_data.get("access_mode") != "write_enabled":
-        return json.dumps({"status": "error", "error": "READ_ONLY_MODE: enable Write mode in AI-DG Control Center first", "access_mode": mode_data.get("access_mode", "read_only"), "target": mode_res.get("target")}, ensure_ascii=False)
+        return json.dumps({"status": "error", "error": "READ_ONLY_MODE: call sketchup_set_write_mode for the selected instance first", "access_mode": mode_data.get("access_mode", "read_only"), "target": mode_res.get("target")}, ensure_ascii=False)
     return None
 
 
@@ -988,6 +967,22 @@ def sketchup_undo(confirm: bool = False) -> str:
 def sketchup_write_mode_status() -> str:
     """Return the SketchUp-side access mode; Normal Mode is read-only by default."""
     res = send_sketchup_cmd("get_runtime_state")
+    return json.dumps(res, indent=2, ensure_ascii=False)
+
+
+@mcp.tool()
+def sketchup_set_write_mode(mode: str = "read_only", confirm: bool = False) -> str:
+    """Change write mode for the selected SketchUp process.
+
+    Enabling writes requires ``confirm=true`` and a native confirmation in
+    that exact SketchUp process. Disabling writes never prompts.
+    """
+    normalized = str(mode).strip().lower()
+    if normalized not in {"read_only", "write_enabled"}:
+        return json.dumps({"status": "error", "error": "INVALID_WRITE_MODE"}, ensure_ascii=False)
+    if normalized == "write_enabled" and not confirm:
+        return json.dumps({"status": "error", "error": "WRITE_MODE_CONFIRMATION_REQUIRED"}, ensure_ascii=False)
+    res = send_sketchup_cmd("set_write_mode", {"mode": normalized, "confirm": bool(confirm)}, timeout=30.0)
     return json.dumps(res, indent=2, ensure_ascii=False)
 
 

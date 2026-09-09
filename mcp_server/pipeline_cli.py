@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""One-shot local pipeline helper for the SketchUp Control Center.
+"""One-shot local drawing-pipeline helper for external clients.
 
-The helper is intentionally separate from the MCP stdio server so the
-HtmlDialog can run a potentially slow drawing analysis off the SketchUp UI
-thread.  It never enables provider traffic and never calls the SketchUp API.
+The helper is intentionally separate from the MCP stdio server. It never
+enables provider traffic and never calls the SketchUp API.
 """
 
 from __future__ import annotations

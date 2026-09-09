@@ -82,7 +82,7 @@ def list_plugins() -> list[dict[str, Any]]:
         "id": "ai-dg-core",
         "name": "AI-DG Core",
         "version": "1.1.0-foundation",
-        "description": "SketchUp Ruby bridge, Control Center and MCP gateway",
+        "description": "Headless SketchUp Ruby bridge and MCP gateway",
         "entry": "bridge_sketchup/ai_dg_bridge.rb",
         "permissions": ["sketchup.read", "sketchup.write", "filesystem.read", "filesystem.write", "mcp"],
         "tools": ["sketchup_ping", "sketchup_get_model_summary", "sketchup_get_selection"],

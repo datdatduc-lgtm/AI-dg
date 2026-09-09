@@ -1,23 +1,21 @@
-# AI-DG native Codex/Cline integration
+# AI-DG headless SketchUp MCP bridge
 
 ## Objective
 
-AI-DG is a SketchUp host, Ruby bridge, shared MCP server, and drawing/build
-pipeline. It is not an AI chat engine. The visible workspace exposes the real
-Codex App Server and real Cline ACP runtime inside SketchUp.
+AI-DG is a headless SketchUp Ruby bridge, shared MCP server, and drawing/build
+pipeline. It is not an AI chat engine and does not embed an agent workspace in
+SketchUp. Codex/Cline remain external MCP clients.
 
 ```text
-SketchUp HtmlDialog
-        |
-Ruby UI-thread bridge
-        |
-Persistent Python Agent Host
-        |----------------------|
-Codex App Server          Cline ACP
-        |----------------------|
-             AI-DG MCP
-                  |
-          official SketchUp API bridge
+Codex / Cline / MCP client
+             |
+         AI-DG MCP
+             |
+ dynamic-port instance router
+             |
+ headless Ruby UI-thread bridge
+             |
+    official SketchUp API
 ```
 
 ## Hard invariants
@@ -27,20 +25,17 @@ Codex App Server          Cline ACP
 - Production must not contain a 9Router/backend selector or read
   `E:\api-key.properties`.
 - Cline must be the owner of its own login, provider, and model configuration.
-- Agent Host is the only process launcher for Codex and Cline.
-- HtmlDialog and Ruby never block waiting for an AI process.
+- The SketchUp extension never launches Codex, Cline, Python Agent Host or a provider process.
+- The extension contains no toolbar, menu, HtmlDialog or transcript UI.
 - SketchUp API calls stay on the SketchUp UI thread through the existing bridge.
-- Writes require native approval, AI-DG write mode, and user confirmation in
-  SketchUp. `eval_ruby` is Developer Mode only.
-- Session mapping stores runtime IDs and cwd only; it never stores transcript
-  copies, prompts, credentials, or model output.
+- Enabling write mode and each write require explicit MCP/runtime intent plus
+  native user confirmation in the exact SketchUp process. `eval_ruby` is Developer Mode only.
 - `sketchup.rb` is a protected system file and is never edited or replaced.
 
-## Visible product surface
+## Product surface
 
-The default UI contains only: Codex, Cline, Bản vẽ, Dựng model, and Cài đặt.
-Protocol IDs, PIDs, raw events, MCP status, and permission requests belong in
-Developer Diagnostics and are hidden unless Developer Mode is enabled.
+SketchUp exposes no AI-DG window. Status, instance selection and diagnostics
+are MCP responses. Native message boxes exist only for security confirmation.
 
 ## Migration rule
 
