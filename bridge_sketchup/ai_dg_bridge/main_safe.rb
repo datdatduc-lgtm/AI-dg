@@ -24,6 +24,11 @@ module AI_DG
       0
     end unless const_defined?(:PORT, false)
     IO_TIMEOUT = 15.0 unless const_defined?(:IO_TIMEOUT, false)
+    MODEL_WRITE_TIMEOUT = 45.0 unless const_defined?(:MODEL_WRITE_TIMEOUT, false)
+    MODEL_WRITE_ACTIONS = %w[
+      create_primitive_box create_semantic_item create_group create_component
+      transform_entity apply_material set_tag undo set_write_mode
+    ].freeze unless const_defined?(:MODEL_WRITE_ACTIONS, false)
     START_DELAY = 5.0 unless const_defined?(:START_DELAY, false)
     TICK_INTERVAL = 0.05 unless const_defined?(:TICK_INTERVAL, false)
     MAX_COMMANDS_PER_TICK = 4 unless const_defined?(:MAX_COMMANDS_PER_TICK, false)
@@ -617,6 +622,9 @@ module AI_DG
         source = File.expand_path(__FILE__)
         raise LoadError, "Bridge source missing: #{source}" unless File.file?(source)
 
+        geometry_source = File.join(File.dirname(source), 'geometry_builder.rb')
+        raise LoadError, "Geometry helper missing: #{geometry_source}" unless File.file?(geometry_source)
+        load geometry_source
         load source
         attach_app_observer
         attach_observers(Sketchup.active_model)
@@ -628,9 +636,11 @@ module AI_DG
           status: 'SUCCESS',
           source: source,
           source_sha256: source_sha256,
+          geometry_source: geometry_source,
+          geometry_source_sha256: Digest::SHA256.file(geometry_source).hexdigest,
           reload_generation: @reload_generation
         })
-        { status: 'ok', reloaded: true, source: source, source_sha256: source_sha256, reload_generation: @reload_generation }
+        { status: 'ok', reloaded: true, source: source, source_sha256: source_sha256, geometry_source: geometry_source, geometry_source_sha256: Digest::SHA256.file(geometry_source).hexdigest, reload_generation: @reload_generation }
       rescue StandardError => e
         record_event('runtime_reloaded', { status: 'ERROR', error: e.message })
         raise
@@ -808,6 +818,9 @@ module AI_DG
           visible: (entity.visible? rescue true),
           bounds_mm: [bounds.width.to_mm.round(3), bounds.depth.to_mm.round(3), bounds.height.to_mm.round(3)]
         }
+        result[:min_mm] = [bounds.min.x.to_mm.round(3), bounds.min.y.to_mm.round(3), bounds.min.z.to_mm.round(3)]
+        result[:max_mm] = [bounds.max.x.to_mm.round(3), bounds.max.y.to_mm.round(3), bounds.max.z.to_mm.round(3)]
+        result[:transformation] = entity.transformation.to_a.map { |value| value.round(8) } if entity.respond_to?(:transformation)
         if entity.respond_to?(:definition)
           definition = entity.definition
           result[:definition] = definition.name.to_s
@@ -940,10 +953,30 @@ module AI_DG
         raise SecurityError, 'SKETCHUP_FILE_WRITE_DENIED' if %w[.SKP .SKB].include?(File.extname(normalized))
       end
 
-      def guard_model_write!
+      def v2_scoped_preapproval?(data)
+        data.is_a?(Hash) &&
+          data['approval_mode'] == 'user_preapproved_v2' &&
+          data['tool_name'] == 'ai_dg_execute_build_ir_v2' &&
+          data['confirm_write'] == true &&
+          data['schema_version'].to_i == 2 &&
+          data['pipeline_stage'] == '2D3D-V2'
+      end
+
+      def guard_model_write!(data = nil)
         raise RuntimeError, 'READ_ONLY_MODE: enable write mode through MCP first' unless access_mode == 'write_enabled'
+        if v2_scoped_preapproval?(data)
+          record_event('model_write_preapproved', {
+            tool: data['tool_name'],
+            item_code: data['item_code'],
+            approval_mode: data['approval_mode'],
+            status: 'SUCCESS'
+          })
+          return true
+        end
         approved = UI.messagebox('AI-DG yêu cầu thay đổi model hiện tại. Cho phép thao tác này?', MB_YESNO)
         raise RuntimeError, 'USER_DECLINED_MODEL_WRITE' unless approved == IDYES
+        raise RuntimeError, 'WRITE_APPROVAL_EXPIRED' if @active_request_deadline && monotonic_time >= @active_request_deadline
+        true
       end
 
       def create_primitive_box(model, data)
@@ -991,7 +1024,7 @@ module AI_DG
       end
 
       def create_semantic_item(model, data)
-        guard_model_write!
+        guard_model_write!(data)
         item_code = data['item_code'].to_s.strip
         raise ArgumentError, 'SEMANTIC_ITEM_CODE_REQUIRED' if item_code.empty?
         tool_name = data['tool_name'].to_s.strip
@@ -1014,7 +1047,9 @@ module AI_DG
           {
             index: index,
             part_id: part['part_id'].to_s.strip.empty? ? "PART-#{index + 1}" : part['part_id'].to_s.strip,
+            region_id: part['region_id'].to_s.strip,
             role: part['role'].to_s.strip.empty? ? 'unspecified' : part['role'].to_s.strip,
+            visibility: part['visibility'].to_s.strip.empty? ? 'VISIBLE' : part['visibility'].to_s.strip,
             material_code: part['material_code'].to_s.strip,
             dimensions: dimensions,
             origin: origin.map(&:to_f)
@@ -1050,7 +1085,9 @@ module AI_DG
             operation_id: operation_id,
             item_code: item_code,
             part_id: part[:part_id],
+            region_id: part[:region_id],
             role: part[:role],
+            visibility: part[:visibility],
             material_code: part[:material_code],
             builder_type: builder_type
           })
@@ -1552,10 +1589,11 @@ module AI_DG
         request = JSON.parse(line)
         request['bridge_transport'] = 'tcp'
         record_event('mcp_connected', { status: 'SUCCESS', request_id: request['request_id'], session_id: request['session_id'], bytes_in: line.bytesize, stage: 'MCP' })
-        @command_queue << { request: request, result_queue: result_queue }
+        result_timeout = MODEL_WRITE_ACTIONS.include?(request['action'].to_s) ? MODEL_WRITE_TIMEOUT : IO_TIMEOUT
+        @command_queue << { request: request, result_queue: result_queue, expires_at: monotonic_time + result_timeout }
         @queue_mutex.synchronize { @result_queue_count = @result_queue_count.to_i + 1 }
         result_pending = true
-        write_response(client, wait_for_result(result_queue, IO_TIMEOUT))
+        write_response(client, wait_for_result(result_queue, result_timeout))
       rescue StandardError => e
         log_exception('client', e)
         write_response(client, { status: 'error', error: "#{e.class}: #{e.message}" })
@@ -1600,7 +1638,16 @@ module AI_DG
         return unless queue
         MAX_COMMANDS_PER_TICK.times do
           command = queue.pop(true)
-          command[:result_queue] << dispatch(command[:request])
+          if command[:expires_at] && monotonic_time >= command[:expires_at]
+            command[:result_queue] << { status: 'error', error: 'WRITE_APPROVAL_EXPIRED' }
+            next
+          end
+          @active_request_deadline = command[:expires_at]
+          begin
+            command[:result_queue] << dispatch(command[:request])
+          ensure
+            @active_request_deadline = nil
+          end
         rescue ThreadError
           break
         rescue StandardError => e

@@ -49,7 +49,9 @@ module AI_DG
       ]
 
       face = group.entities.add_face(pts)
-      face.pushpull(-mm(height_z))
+      raise ArgumentError, 'BOX_FACE_CREATION_FAILED' unless face
+      face.reverse! if face.normal.z < 0
+      face.pushpull(mm(height_z))
 
       paint_entity(group, mat) if mat
       attach_meta(group, meta) unless meta.empty?

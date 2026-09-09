@@ -13,7 +13,7 @@ import os
 from typing import Any, Iterable
 
 
-CAPABILITY_ORDER = ("CORE", "MODEL_READ", "DRAWING", "BUILD", "VERIFY", "DEV")
+CAPABILITY_ORDER = ("CORE", "MODEL_READ", "DRAWING", "DRAWING_EXECUTION", "BUILD", "VERIFY", "DEV")
 
 
 CORE_TOOLS = frozenset(
@@ -92,13 +92,15 @@ BUILD_TOOLS = frozenset(
         "sketchup_apply_material",
         "sketchup_set_tag",
         "sketchup_undo",
-        "sketchup_write_mode_status",
-        "sketchup_set_write_mode",
     }
 )
 
+DRAWING_EXECUTION_TOOLS = frozenset(
+    {"ai_dg_execute_build_ir_v2", "sketchup_write_mode_status", "sketchup_set_write_mode"}
+)
 
-VERIFY_TOOLS = frozenset({"ai_dg_verification"})
+
+VERIFY_TOOLS = frozenset({"ai_dg_verification", "ai_dg_verify_sketchup_build_v2"})
 
 
 DEV_TOOLS = frozenset(
@@ -122,6 +124,7 @@ GROUP_TOOLS = {
     "CORE": CORE_TOOLS,
     "MODEL_READ": MODEL_READ_TOOLS,
     "DRAWING": DRAWING_TOOLS,
+    "DRAWING_EXECUTION": DRAWING_EXECUTION_TOOLS,
     "BUILD": BUILD_TOOLS,
     "VERIFY": VERIFY_TOOLS,
     "DEV": DEV_TOOLS,
@@ -135,8 +138,9 @@ PROFILE_GROUPS = {
     "minimal": frozenset({"CORE", "MODEL_READ"}),
     "model_read": frozenset({"CORE", "MODEL_READ"}),
     "drawing": frozenset({"CORE", "MODEL_READ", "DRAWING", "VERIFY"}),
+    "drawing_reconstruction": frozenset({"CORE", "MODEL_READ", "DRAWING", "DRAWING_EXECUTION", "VERIFY"}),
     "agent": frozenset({"CORE", "MODEL_READ"}),
-    "build": frozenset({"CORE", "MODEL_READ", "DRAWING", "BUILD", "VERIFY"}),
+    "build": frozenset({"CORE", "MODEL_READ", "DRAWING", "DRAWING_EXECUTION", "BUILD", "VERIFY"}),
     "full": frozenset(CAPABILITY_ORDER),
     "dev": frozenset(CAPABILITY_ORDER),
 }

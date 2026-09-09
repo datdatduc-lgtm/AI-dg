@@ -72,7 +72,9 @@ TOOL_REGISTRY = [
     {"id": "ai_dg_build_ir", "permission": "filesystem.read", "risk": "LOW"},
     {"id": "ai_dg_codegen", "permission": "filesystem.read", "risk": "LOW"},
     {"id": "ai_dg_execute_build_plan", "permission": "sketchup.write", "risk": "HIGH"},
+    {"id": "ai_dg_execute_build_ir_v2", "permission": "sketchup.write", "risk": "HIGH"},
     {"id": "ai_dg_verification", "permission": "filesystem.read", "risk": "LOW"},
+    {"id": "ai_dg_verify_sketchup_build_v2", "permission": "sketchup.read", "risk": "LOW"},
     {"id": "ai_dg_list_tools", "permission": "runtime.read", "risk": "LOW"},
     {"id": "sketchup_capture_viewport", "permission": "filesystem.write", "risk": "MEDIUM"},
     {"id": "sketchup_create_box", "permission": "sketchup.write", "risk": "MEDIUM"},
@@ -652,6 +654,87 @@ def ai_dg_execute_build_plan(run_id: str, project_path: str = "E:/AI-DG", review
 @mcp.tool()
 def ai_dg_verification(run_id: str, project_path: str = "E:/AI-DG") -> str:
     return ai_dg_pipeline_artifacts(run_id, "verification", project_path)
+
+
+@mcp.tool()
+def ai_dg_execute_build_ir_v2(project_path: str = "E:/AI-DG", confirm_write: bool = False) -> str:
+    """Execute only a READY, APPROVED, projection-PASS Build IR V2."""
+    root, denied = _pipeline_root(project_path)
+    if denied:
+        return json.dumps(denied, ensure_ascii=False)
+    build_path = root / "OUTPUT" / "MODEL" / "build-ir-v2.json"
+    if not build_path.is_file():
+        return json.dumps({"status": "error", "error": "BUILD_IR_V2_NOT_FOUND", "path": str(build_path)}, ensure_ascii=False)
+    try:
+        target_record = INSTANCE_ROUTER.resolve(require_explicit=True)
+        target = INSTANCE_ROUTER.public_target(target_record)
+        mode_res = send_sketchup_cmd("get_runtime_state")
+        if mode_res.get("status") != "ok":
+            return json.dumps(mode_res, ensure_ascii=False)
+        build_ir = json.loads(build_path.read_text(encoding="utf-8"))
+        if str(ROOT_DIR) not in sys.path:
+            sys.path.insert(0, str(ROOT_DIR))
+        from pipeline.stages.executor_v2 import execute_build_ir_v2
+
+        result = execute_build_ir_v2(
+            build_ir,
+            target=target,
+            access_mode=str(mode_res.get("data", {}).get("access_mode") or "read_only"),
+            confirm_write=bool(confirm_write),
+            dispatch=lambda payload: send_sketchup_cmd("create_semantic_item", payload, timeout=50.0),
+            readback=lambda code: send_sketchup_cmd("get_semantic_item", {"item_code": code}, timeout=15.0),
+        )
+        verification_dir = root / "OUTPUT" / "VERIFICATION"
+        verification_dir.mkdir(parents=True, exist_ok=True)
+        if result.get("readback"):
+            (verification_dir / "sketchup-readback-v2.json").write_text(json.dumps(result["readback"], ensure_ascii=False, indent=2), encoding="utf-8")
+        if result.get("postbuild"):
+            (verification_dir / "projection-postbuild-v2.json").write_text(json.dumps(result["postbuild"], ensure_ascii=False, indent=2), encoding="utf-8")
+        return json.dumps(result, ensure_ascii=False)
+    except RouterFailure as exc:
+        return json.dumps(exc.as_result(), ensure_ascii=False)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, ImportError) as exc:
+        return json.dumps({"status": "error", "error": "BUILD_IR_V2_EXECUTION_FAILED", "detail": str(exc)}, ensure_ascii=False)
+
+
+@mcp.tool()
+def ai_dg_verify_sketchup_build_v2(project_path: str = "E:/AI-DG") -> str:
+    """Read back V2 items via official Ruby and run post-build projection only."""
+    root, denied = _pipeline_root(project_path)
+    if denied:
+        return json.dumps(denied, ensure_ascii=False)
+    build_path = root / "OUTPUT" / "MODEL" / "build-ir-v2.json"
+    if not build_path.is_file():
+        return json.dumps({"status": "error", "error": "BUILD_IR_V2_NOT_FOUND"}, ensure_ascii=False)
+    try:
+        target_record = INSTANCE_ROUTER.resolve(require_explicit=True)
+        target = INSTANCE_ROUTER.public_target(target_record)
+        build_ir = json.loads(build_path.read_text(encoding="utf-8"))
+        if str(ROOT_DIR) not in sys.path:
+            sys.path.insert(0, str(ROOT_DIR))
+        from pipeline.stages.executor_v2 import normalize_sketchup_readback_v2
+        from pipeline.stages.projection_verification_v2 import verify_postbuild_projection_v2
+
+        regions = []
+        roots = []
+        for operation in build_ir.get("operations", []):
+            response = send_sketchup_cmd("get_semantic_item", {"item_code": operation.get("item_code")}, timeout=15.0)
+            if response.get("status") != "ok":
+                return json.dumps(response, ensure_ascii=False)
+            normalized = normalize_sketchup_readback_v2(response)
+            regions.extend(normalized["regions"])
+            roots.append(normalized["root"])
+        readback = {"schema_version": 2, "target": target, "roots": roots, "regions": regions, "readback_source": "official_sketchup_ruby_api"}
+        post = verify_postbuild_projection_v2(build_ir, readback)
+        verification_dir = root / "OUTPUT" / "VERIFICATION"
+        verification_dir.mkdir(parents=True, exist_ok=True)
+        (verification_dir / "sketchup-readback-v2.json").write_text(json.dumps(readback, ensure_ascii=False, indent=2), encoding="utf-8")
+        (verification_dir / "projection-postbuild-v2.json").write_text(json.dumps(post, ensure_ascii=False, indent=2), encoding="utf-8")
+        return json.dumps({"status": post["status"], "target": target, "readback": readback, "postbuild": post}, ensure_ascii=False)
+    except RouterFailure as exc:
+        return json.dumps(exc.as_result(), ensure_ascii=False)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, ImportError) as exc:
+        return json.dumps({"status": "error", "error": "POSTBUILD_V2_FAILED", "detail": str(exc)}, ensure_ascii=False)
 
 
 @mcp.tool()

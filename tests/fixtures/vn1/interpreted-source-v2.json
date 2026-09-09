@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "fixture": "VN-1",
+  "source_file": "CHI TIET VACH NGAN VN-1.pdf",
+  "source_sha256": "3888604d8d715beb0f77bf50b48c747caa99292580234f5e0e6e53f003dbec7d",
+  "source_review_status": "APPROVED",
+  "items": [
+    {
+      "item_code": "VN-1",
+      "coordinate_frame": {"x_role": "main_length", "y_role": "depth_or_thickness", "z_role": "height"},
+      "views": [
+        {"id": "elevation-main", "role": "front_elevation", "projection_axes": ["X", "Z"], "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "elevation-main"}]},
+        {"id": "side-typical", "role": "side_elevation", "projection_axes": ["Y", "Z"], "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "side-typical"}]},
+        {"id": "section-typical", "role": "section", "projection_axes": ["Y", "Z"], "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "section-typical"}]},
+        {"id": "detail-ct1", "role": "local_detail", "projection_axes": ["Y", "Z"], "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "detail-ct1"}]}
+      ],
+      "envelope": {"x_mm": 8000, "y_mm": 40, "z_mm": 1100, "y_state": "APPROVED_DERIVED", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "detail-ct1", "label": "14+12+14=40"}]},
+      "dimension_spans": [
+        {"id": "dim-x-overall", "axis": "X", "value_mm": 8000, "start_ref": "item.left", "end_ref": "item.right", "span_kind": "overall", "view_id": "elevation-main", "state": "EXPLICIT", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "elevation-main", "label": "8000"}]},
+        {"id": "dim-z-overall", "axis": "Z", "value_mm": 1100, "start_ref": "item.bottom", "end_ref": "item.top", "span_kind": "overall", "view_id": "elevation-main", "state": "EXPLICIT", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "elevation-main", "label": "1100"}]},
+        {"id": "dim-z-lower", "axis": "Z", "value_mm": 800, "start_ref": "item.bottom", "end_ref": "lower-body.top", "span_kind": "region", "view_id": "elevation-main", "state": "EXPLICIT", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "elevation-main", "label": "800"}]},
+        {"id": "dim-z-upper", "axis": "Z", "value_mm": 300, "start_ref": "lower-body.top", "end_ref": "item.top", "span_kind": "region", "view_id": "elevation-main", "state": "EXPLICIT", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "elevation-main", "label": "300"}]},
+        {"id": "dim-z-lower-section", "axis": "Z", "value_mm": 750, "start_ref": "item.bottom", "end_ref": "embed.bottom", "span_kind": "refinement", "view_id": "section-typical", "state": "EXPLICIT", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "section-typical", "label": "750"}]},
+        {"id": "dim-z-embed", "axis": "Z", "value_mm": 50, "start_ref": "embed.bottom", "end_ref": "lower-body.top", "span_kind": "refinement", "view_id": "section-typical", "state": "EXPLICIT", "visibility": "SECTION_ONLY", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "section-typical", "label": "50"}]},
+        {"id": "dim-y-glass", "axis": "Y", "value_mm": 10, "start_ref": "glass.face_a", "end_ref": "glass.face_b", "span_kind": "material_thickness", "view_id": "detail-ct1", "state": "EXPLICIT_LOCAL_DETAIL", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "detail-ct1", "label": "10mm glass"}]}
+      ],
+      "dimension_hierarchy": [
+        {"parent_span_id": "dim-z-overall", "child_span_ids": ["dim-z-lower", "dim-z-upper"], "relation": "REFINES"},
+        {"parent_span_id": "dim-z-lower", "child_span_ids": ["dim-z-lower-section", "dim-z-embed"], "relation": "REFINES"}
+      ],
+      "regions": [
+        {"id": "lower-body", "node_type": "REGION", "visibility": "VISIBLE", "bounds": {"x": [0, 8000], "y": [0, 40], "z": [0, 800]}, "state": "EXPLICIT", "material_id": "mat-lower", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "elevation-main"}]},
+        {"id": "upper-glass", "node_type": "REGION", "visibility": "VISIBLE", "bounds": {"x": [0, 8000], "y": [15, 25], "z": [800, 1100]}, "state": "EXPLICIT", "material_id": "mat-glass", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "elevation-main"}, {"source_id": "vn1-pdf", "page": 1, "view_id": "detail-ct1"}]}
+      ],
+      "subregions": [
+        {"id": "embed-50", "node_type": "SUBREGION", "visibility": "SECTION_ONLY", "bounds": {"z": [750, 800]}, "state": "REVIEW_REQUIRED", "parent_region_id": "lower-body", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "section-typical"}]}
+      ],
+      "materials": [
+        {"id": "mat-lower", "node_type": "MATERIAL_LAYER", "code": "MDF_MELAMINE_LIGHT_GREY", "state": "EXPLICIT", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "elevation-main"}]},
+        {"id": "mat-glass", "node_type": "MATERIAL_LAYER", "code": "TEMPERED_GLASS_10MM_BLUE_FROSTED_DECAL", "thickness_mm": 10, "state": "EXPLICIT_LOCAL_DETAIL", "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "detail-ct1"}]}
+      ],
+      "unresolved_geometry": [{"description": "exact silicone bead profile", "impact": "NON_BLOCKING", "state": "REVIEW_REQUIRED"}],
+      "source_refs": [{"source_id": "vn1-pdf", "page": 1, "view_id": "elevation-main"}]
+    }
+  ]
+}
