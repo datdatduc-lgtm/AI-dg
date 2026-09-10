@@ -184,7 +184,10 @@ def test_ruby_bridge_limits_preapproval_to_v2_semantic_item():
     assert "def v2_scoped_preapproval?(data)" in source
     assert "data['tool_name'] == 'ai_dg_execute_build_ir_v2'" in source
     assert "def create_semantic_item(model, data)\n        guard_model_write!(data)" in source
-    assert source.count("guard_model_write!(data)") == 1
+    assert "def v3_scoped_preapproval?(data)" in source
+    assert "data['tool_name'] == 'ai_dg_execute_build_ir_v3'" in source
+    assert "def create_reconstruction_item_v3(model, data)\n        guard_model_write!(data)" in source
+    assert source.count("guard_model_write!(data)") == 2
 
 
 def test_drawing_reconstruction_profile_hides_raw_writes():

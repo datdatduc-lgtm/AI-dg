@@ -36,6 +36,7 @@ __pycache__/
 # Extracted installers and local backups
 p0_installer_extract_*/
 audit_backup_*/
+.tools/tessdata/*.traineddata
 
 # Temporary test workspaces
 WORK/pytest*/

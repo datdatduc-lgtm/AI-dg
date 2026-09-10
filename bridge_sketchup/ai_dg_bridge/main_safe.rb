@@ -27,7 +27,7 @@ module AI_DG
     MODEL_WRITE_TIMEOUT = 45.0 unless const_defined?(:MODEL_WRITE_TIMEOUT, false)
     MODEL_WRITE_ACTIONS = %w[
       create_primitive_box create_semantic_item create_group create_component
-      transform_entity apply_material set_tag undo set_write_mode
+      create_reconstruction_item_v3 transform_entity apply_material set_tag undo set_write_mode
     ].freeze unless const_defined?(:MODEL_WRITE_ACTIONS, false)
     START_DELAY = 5.0 unless const_defined?(:START_DELAY, false)
     TICK_INTERVAL = 0.05 unless const_defined?(:TICK_INTERVAL, false)
@@ -72,6 +72,7 @@ module AI_DG
       { id: 'sketchup_get_entity', permission: 'sketchup.read', risk: 'LOW' },
       { id: 'sketchup_get_semantic_item', permission: 'sketchup.read', risk: 'LOW' },
       { id: 'sketchup_create_semantic_item', permission: 'sketchup.write', risk: 'MEDIUM' },
+      { id: 'sketchup_create_reconstruction_item_v3', permission: 'sketchup.write', risk: 'MEDIUM' },
       { id: 'sketchup_get_hierarchy', permission: 'sketchup.read', risk: 'LOW' },
       { id: 'sketchup_list_components', permission: 'sketchup.read', risk: 'LOW' },
       { id: 'sketchup_list_materials', permission: 'sketchup.read', risk: 'LOW' },
@@ -274,6 +275,8 @@ module AI_DG
                    create_primitive_box(model, data)
                  when 'create_semantic_item'
                    create_semantic_item(model, data)
+                 when 'create_reconstruction_item_v3'
+                   create_reconstruction_item_v3(model, data)
                  when 'create_group'
                    create_group(model, data)
                  when 'create_component'
@@ -782,7 +785,7 @@ module AI_DG
                  else
                    []
                  end
-        {
+        result = {
           found: true,
           item_code: item_code,
           root: entity_summary(root).merge(attributes: attribute_summary(root)),
@@ -790,6 +793,15 @@ module AI_DG
           part_count: parts.length,
           readback_source: 'official_sketchup_ruby_api'
         }
+        if root.get_attribute('AI_DG', 'builder_type').to_s == 'profile_assembly_v3'
+          result[:model_revision] = root.get_attribute('AI_DG', 'model_revision').to_i
+          result[:geometry_hash] = root.get_attribute('AI_DG', 'geometry_hash').to_s
+          result[:analysis_section_profiles] = analyze_section_profiles_v3(root)
+          result[:analysis_relationships] = analyze_relationships_v3(root)
+          result[:analysis_features] = analyze_insert_features_v3(root)
+          result[:analysis_views] = analyze_views_v3(root, result[:analysis_section_profiles])
+        end
+        result
       rescue StandardError => e
         { found: false, item_code: item_code, error: "SEMANTIC_ITEM_READ_FAILED: #{e.class}: #{e.message}" }
       end
@@ -962,9 +974,18 @@ module AI_DG
           data['pipeline_stage'] == '2D3D-V2'
       end
 
+      def v3_scoped_preapproval?(data)
+        data.is_a?(Hash) &&
+          data['approval_mode'] == 'user_preapproved_v3' &&
+          data['tool_name'] == 'ai_dg_execute_build_ir_v3' &&
+          data['confirm_write'] == true &&
+          data['schema_version'].to_i == 3 &&
+          data['pipeline_stage'] == 'RECONSTRUCTION-V3'
+      end
+
       def guard_model_write!(data = nil)
         raise RuntimeError, 'READ_ONLY_MODE: enable write mode through MCP first' unless access_mode == 'write_enabled'
-        if v2_scoped_preapproval?(data)
+        if v2_scoped_preapproval?(data) || v3_scoped_preapproval?(data)
           record_event('model_write_preapproved', {
             tool: data['tool_name'],
             item_code: data['item_code'],
@@ -977,6 +998,184 @@ module AI_DG
         raise RuntimeError, 'USER_DECLINED_MODEL_WRITE' unless approved == IDYES
         raise RuntimeError, 'WRITE_APPROVAL_EXPIRED' if @active_request_deadline && monotonic_time >= @active_request_deadline
         true
+      end
+
+      def create_reconstruction_item_v3(model, data)
+        guard_model_write!(data)
+        item_code = data['item_code'].to_s.strip
+        raise ArgumentError, 'RECONSTRUCTION_ITEM_CODE_REQUIRED' if item_code.empty?
+        body = data['body']
+        inserts = data['inserts']
+        raise ArgumentError, 'RECONSTRUCTION_BODY_REQUIRED' unless body.is_a?(Hash)
+        raise ArgumentError, 'RECONSTRUCTION_INSERTS_REQUIRED' unless inserts.is_a?(Array) && !inserts.empty?
+        length_x = Float(body.fetch('length_mm'))
+        profile_yz = body.fetch('profile_yz_mm')
+
+        operation_started = false
+        operation_id = "op-v3-#{Time.now.utc.strftime('%Y%m%dT%H%M%S.%LZ')}-#{Thread.current.object_id}"
+        before = model_summary(model)
+        model.start_operation('AI-DG Rebuild Reconstruction V3 Item', true)
+        operation_started = true
+        existing = model.entities.to_a.select do |entity|
+          entity.respond_to?(:get_attribute) && entity.get_attribute('AI_DG', 'item_code').to_s == item_code
+        end
+        model.entities.erase_entities(existing) unless existing.empty?
+
+        root = model.entities.add_group
+        root.name = data['name'].to_s.strip.empty? ? "AI_DG_V3_#{item_code}" : data['name'].to_s.strip
+        AI_DG::Geometry.attach_meta(root, {
+          operation_id: operation_id,
+          tool: 'ai_dg_execute_build_ir_v3',
+          builder_type: 'profile_assembly_v3',
+          schema_version: 3,
+          pipeline_stage: 'RECONSTRUCTION-V3',
+          item_code: item_code,
+          model_revision: Integer(data.fetch('model_revision')),
+          geometry_hash: data.fetch('geometry_hash').to_s,
+          created_utc: Time.now.utc.iso8601
+        })
+
+        body_material = AI_DG::Geometry.get_or_create_material(model, body['material_code'].to_s.empty? ? 'body' : body['material_code'].to_s)
+        body_group = AI_DG::Geometry.create_profile_extrusion(root.entities, length_x, profile_yz, body_material, {
+          operation_id: operation_id,
+          item_code: item_code,
+          part_id: body['part_id'] || 'body',
+          region_id: body['region_id'] || 'body',
+          role: 'profile_body',
+          visibility: 'VISIBLE',
+          material_code: body['material_code'] || 'body',
+          profile_id: body['profile_id'] || 'profile-main',
+          builder_type: 'profile_assembly_v3'
+        })
+        body_group.name = "#{item_code}_profile_body"
+
+        insert_groups = inserts.map.with_index do |insert, index|
+          dimensions = %w[width_mm depth_mm height_mm].map { |key| Float(insert.fetch('dimensions_mm').fetch(key)) }
+          origin = Array(insert.fetch('origin_mm')).map { |value| Float(value) }
+          raise ArgumentError, 'RECONSTRUCTION_INSERT_ORIGIN_INVALID' unless origin.length == 3
+          material_code = insert['material_code'].to_s.empty? ? 'insert' : insert['material_code'].to_s
+          material = AI_DG::Geometry.get_or_create_material(model, material_code, [120, 190, 220], 0.45)
+          meta = {
+            operation_id: operation_id,
+            item_code: item_code,
+            part_id: insert['part_id'] || "insert-#{index + 1}",
+            region_id: insert['region_id'] || "insert-#{index + 1}",
+            role: 'insert',
+            visibility: 'VISIBLE',
+            material_code: material_code,
+            builder_type: 'profile_assembly_v3'
+          }
+          radius = insert['top_corner_radius_mm']
+          child = if radius && Float(radius).positive?
+                    AI_DG::Geometry.create_rounded_top_panel(root.entities, *dimensions, origin, Float(radius), material, meta)
+                  else
+                    AI_DG::Geometry.create_box(root.entities, *dimensions, origin, material, meta)
+                  end
+          child.name = "#{item_code}_insert_#{index + 1}"
+          child
+        end
+        raise RuntimeError, 'RECONSTRUCTION_BUILD_VERIFY_FAILED' unless root.valid? && body_group.valid? && insert_groups.all?(&:valid?)
+
+        model.commit_operation
+        operation_started = false
+        after = model_summary(model)
+        record_event('model_write_finished', { operation_id: operation_id, tool: 'ai_dg_execute_build_ir_v3', status: 'SUCCESS', verified: true, after: after })
+        { status: 'ok', operation_id: operation_id, item_code: item_code, root_persistent_id: (root.persistent_id rescue nil), replaced_count: existing.length, before: before, after: after, verified: true }
+      rescue StandardError => e
+        model.abort_operation if operation_started
+        record_event('model_write_finished', { operation_id: operation_id, tool: 'ai_dg_execute_build_ir_v3', status: 'ERROR', error: e.message, rollback: operation_started }) if operation_id
+        raise
+      end
+
+      def profile_vertices_yz_v3(group)
+        transform = group.transformation
+        group.entities.grep(Sketchup::Edge).flat_map(&:vertices).map do |vertex|
+          point = vertex.position.transform(transform)
+          [point.y.to_mm.round(3), point.z.to_mm.round(3)]
+        end.uniq
+      end
+
+      def analyze_section_profiles_v3(root)
+        body = root.entities.to_a.find { |child| child.get_attribute('AI_DG', 'role').to_s == 'profile_body' rescue false }
+        return [] unless body && body.respond_to?(:entities)
+        vertices = profile_vertices_yz_v3(body)
+        return [] if vertices.empty?
+        min_y, max_y = vertices.map(&:first).minmax
+        min_z, max_z = vertices.map(&:last).minmax
+        inner_levels = vertices.map(&:last).uniq.select { |z| z > min_z + 0.1 && z < max_z - 0.1 }.sort.reverse
+        features = []
+        inner_levels.each do |inner_z|
+          inner_y = vertices.select { |_, z| (z - inner_z).abs <= 0.1 }.map(&:first).select { |y| y > min_y + 0.1 && y < max_y - 0.1 }
+          next if inner_y.length < 2
+          width = inner_y.max - inner_y.min
+          next unless width.positive? && width < (max_y - min_y)
+          features << {
+            feature_id: 'slot-main',
+            type: 'SLOT',
+            dimensions_mm: { width: width.round(3), depth: (max_z - inner_z).round(3) },
+            position: { axis: 'Y', alignment: (((inner_y.min + inner_y.max) / 2.0 - (min_y + max_y) / 2.0).abs <= 0.1 ? 'CENTER' : 'OFFSET') },
+            observed_from: 'official_sketchup_edge_geometry'
+          }
+          break
+        end
+        [{
+          profile_id: body.get_attribute('AI_DG', 'profile_id').to_s,
+          view_id: 'native-section',
+          state: 'OBSERVED',
+          bounds_mm: { y: [min_y, max_y], z: [min_z, max_z] },
+          features: features,
+          observed_from: 'official_sketchup_edge_geometry'
+        }]
+      end
+
+      def analyze_relationships_v3(root)
+        body = root.entities.to_a.find { |child| child.get_attribute('AI_DG', 'role').to_s == 'profile_body' rescue false }
+        inserts = root.entities.to_a.select { |child| child.get_attribute('AI_DG', 'role').to_s == 'insert' rescue false }
+        return [] unless body
+        inserts.map do |insert|
+          centered = ((insert.bounds.center.y - body.bounds.center.y).to_mm.abs <= 0.1)
+          embed = [body.bounds.max.z - insert.bounds.min.z, 0].max.to_mm.round(3)
+          { type: 'INSERT_IN_BODY', centered_y: centered, embed_depth_mm: embed, observed_from: 'official_sketchup_bounds' }
+        end
+      end
+
+      def analyze_insert_features_v3(root)
+        inserts = root.entities.to_a.select { |child| child.get_attribute('AI_DG', 'role').to_s == 'insert' rescue false }
+        inserts.flat_map do |insert|
+          next [] unless insert.respond_to?(:entities)
+          transform = insert.transformation
+          vertices = insert.entities.grep(Sketchup::Edge).flat_map(&:vertices).map do |vertex|
+            point = vertex.position.transform(transform)
+            [point.x.to_mm.round(3), point.z.to_mm.round(3)]
+          end.uniq
+          next [] if vertices.length <= 8
+          min_x, max_x = vertices.map(&:first).minmax
+          max_z = vertices.map(&:last).max
+          top_x = vertices.select { |_, z| (z - max_z).abs <= 0.1 }.map(&:first)
+          next [] if top_x.empty?
+          radius = [top_x.min - min_x, max_x - top_x.max].min
+          next [] unless radius > 0.1
+          [{
+            feature_id: 'top-corner-radius', type: 'RADIUS',
+            dimensions_mm: { radius: radius.round(3) },
+            position: { edge: 'TOP', ends: 'BOTH' }, view_types: ['FRONT'],
+            observed_from: 'official_sketchup_edge_geometry'
+          }]
+        end
+      end
+
+      def analyze_views_v3(root, profiles)
+        bounds = root.bounds
+        parts = root.entities.to_a.map do |child|
+          { region_id: (child.get_attribute('AI_DG', 'region_id') rescue nil), min_mm: [child.bounds.min.x.to_mm.round(3), child.bounds.min.y.to_mm.round(3), child.bounds.min.z.to_mm.round(3)], max_mm: [child.bounds.max.x.to_mm.round(3), child.bounds.max.y.to_mm.round(3), child.bounds.max.z.to_mm.round(3)] }
+        end
+        {
+          front: { axes: %w[X Z], overall_mm: [bounds.width.to_mm.round(3), bounds.height.to_mm.round(3)], regions: parts },
+          side: { axes: %w[Y Z], overall_mm: [bounds.depth.to_mm.round(3), bounds.height.to_mm.round(3)], regions: parts },
+          section: { axes: %w[Y Z], profiles: profiles },
+          detail: { axes: %w[Y Z], profiles: profiles },
+          observed_from: 'official_sketchup_ruby_api'
+        }
       end
 
       def create_primitive_box(model, data)

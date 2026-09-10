@@ -55,6 +55,7 @@ DRAWING_TOOLS = frozenset(
         "ai_dg_build_workflow_profile",
         "ai_dg_source_ingest",
         "ai_dg_pipeline_run",
+        "ai_dg_reconstruction_workflow_v3",
         "ai_dg_pipeline_artifacts",
         "ai_dg_review_queue",
         "ai_dg_model_spec",
@@ -96,11 +97,11 @@ BUILD_TOOLS = frozenset(
 )
 
 DRAWING_EXECUTION_TOOLS = frozenset(
-    {"ai_dg_execute_build_ir_v2", "sketchup_write_mode_status", "sketchup_set_write_mode"}
+    {"ai_dg_execute_build_ir_v2", "ai_dg_execute_reconstruction_v3", "sketchup_write_mode_status", "sketchup_set_write_mode"}
 )
 
 
-VERIFY_TOOLS = frozenset({"ai_dg_verification", "ai_dg_verify_sketchup_build_v2"})
+VERIFY_TOOLS = frozenset({"ai_dg_verification", "ai_dg_verify_sketchup_build_v2", "ai_dg_compare_views_v3", "ai_dg_view_back_sketchup_v3"})
 
 
 DEV_TOOLS = frozenset(

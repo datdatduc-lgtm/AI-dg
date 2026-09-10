@@ -10,6 +10,7 @@ the MCP server; it does not spawn a shell or access provider credentials.
 from __future__ import annotations
 
 import runpy
+import site
 import sys
 from pathlib import Path
 
@@ -18,6 +19,10 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DEPENDENCY_DIR = ROOT_DIR / "OUTPUT" / "mcp_deps"
 SERVER_DIR = ROOT_DIR / "mcp_server"
 
+# Process bundled .pth files (notably pywin32's pywintypes bootstrap) before
+# putting the dependency directory at the front of sys.path.  Plain insertion
+# works on Unix but leaves MCP stdio unable to start on a clean Windows host.
+site.addsitedir(str(DEPENDENCY_DIR))
 for path in (str(DEPENDENCY_DIR), str(ROOT_DIR), str(SERVER_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)

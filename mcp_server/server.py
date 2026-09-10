@@ -29,6 +29,7 @@ MODEL_WRITE_ACTIONS = frozenset(
     {
         "create_primitive_box",
         "create_semantic_item",
+        "create_reconstruction_item_v3",
         "create_group",
         "create_component",
         "transform_entity",
@@ -65,6 +66,10 @@ TOOL_REGISTRY = [
     {"id": "ai_dg_build_workflow_profile", "permission": "filesystem.write", "risk": "MEDIUM"},
     {"id": "ai_dg_source_ingest", "permission": "filesystem.write", "risk": "MEDIUM"},
     {"id": "ai_dg_pipeline_run", "permission": "filesystem.write", "risk": "MEDIUM"},
+    {"id": "ai_dg_reconstruction_workflow_v3", "permission": "filesystem.write", "risk": "MEDIUM"},
+    {"id": "ai_dg_execute_reconstruction_v3", "permission": "sketchup.write", "risk": "HIGH"},
+    {"id": "ai_dg_compare_views_v3", "permission": "filesystem.write", "risk": "MEDIUM"},
+    {"id": "ai_dg_view_back_sketchup_v3", "permission": "sketchup.read", "risk": "LOW"},
     {"id": "ai_dg_pipeline_artifacts", "permission": "filesystem.read", "risk": "LOW"},
     {"id": "ai_dg_review_queue", "permission": "filesystem.read", "risk": "LOW"},
     {"id": "ai_dg_model_spec", "permission": "filesystem.read", "risk": "LOW"},
@@ -522,6 +527,156 @@ def ai_dg_pipeline_run(project_path: str = "E:/AI-DG", run_id: str = "", render_
         return json.dumps(result.to_dict(), ensure_ascii=False)
     except (OSError, ValueError, PermissionError, RuntimeError, ImportError) as exc:
         return json.dumps({"status": "error", "error": "PIPELINE_RUN_FAILED", "detail": str(exc)}, ensure_ascii=False)
+
+
+@mcp.tool()
+def ai_dg_reconstruction_workflow_v3(interpreted_source_path: str, project_path: str = "E:/AI-DG", run_id: str = "") -> str:
+    """Extract a raw PDF/image or consume evidence JSON, then build all V3 pre-build artifacts."""
+    root, denied = _pipeline_root(project_path)
+    if denied:
+        return json.dumps(denied, ensure_ascii=False)
+    run_id = str(run_id or f"reconstruction-{uuid.uuid4()}")
+    if not __import__("re").fullmatch(r"[A-Za-z0-9._-]{1,120}", run_id):
+        return json.dumps({"status": "error", "error": "INVALID_RUN_ID"}, ensure_ascii=False)
+    source = Path(interpreted_source_path).expanduser().resolve()
+    try:
+        if not source.is_file() or not source.is_relative_to(root):
+            return json.dumps({"status": "error", "error": "INTERPRETED_SOURCE_OUTSIDE_PROJECT", "path": str(source)}, ensure_ascii=False)
+        if str(ROOT_DIR) not in sys.path:
+            sys.path.insert(0, str(ROOT_DIR))
+        from pipeline.stages.reconstruction_workflow_v3 import run_raw_reconstruction_workflow_v3, run_reconstruction_workflow_v3
+
+        if source.suffix.lower() == ".json":
+            payload = json.loads(source.read_text(encoding="utf-8"))
+            result = run_reconstruction_workflow_v3(payload, root, run_id)
+        elif source.suffix.lower() in {".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
+            result = run_raw_reconstruction_workflow_v3(source, root, run_id, tessdata_dir=root / ".tools" / "tessdata")
+            result.pop("payload", None)
+        else:
+            return json.dumps({"status": "error", "error": "RECONSTRUCTION_SOURCE_TYPE_UNSUPPORTED", "path": str(source)}, ensure_ascii=False)
+        return json.dumps(result, ensure_ascii=False)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, ImportError) as exc:
+        return json.dumps({"status": "error", "error": "RECONSTRUCTION_WORKFLOW_V3_FAILED", "detail": str(exc)}, ensure_ascii=False)
+
+
+@mcp.tool()
+def ai_dg_execute_reconstruction_v3(run_id: str, project_path: str = "E:/AI-DG", confirm_write: bool = False, test_wrong_hypothesis: bool = True) -> str:
+    """Build on the selected SketchUp instance, native-view-back, and repair by replacing the full item."""
+    root, denied = _pipeline_root(project_path)
+    if denied:
+        return json.dumps(denied, ensure_ascii=False)
+    if not __import__("re").fullmatch(r"[A-Za-z0-9._-]{1,120}", str(run_id)):
+        return json.dumps({"status": "error", "error": "INVALID_RUN_ID"}, ensure_ascii=False)
+    work = root / "WORK" / "reconstruction" / str(run_id)
+    payload_path = work / "interpreted-payload-v3.json"
+    try:
+        if not payload_path.is_file():
+            return json.dumps({"status": "error", "error": "INTERPRETED_PAYLOAD_V3_NOT_FOUND", "path": str(payload_path)}, ensure_ascii=False)
+        target_record = INSTANCE_ROUTER.resolve(require_explicit=True)
+        target = INSTANCE_ROUTER.public_target(target_record)
+        mode_res = send_sketchup_cmd("get_runtime_state")
+        if mode_res.get("status") != "ok":
+            return json.dumps({"status": "error", "error": "SKETCHUP_RUNTIME_STATE_FAILED", "detail": mode_res}, ensure_ascii=False)
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        if str(ROOT_DIR) not in sys.path:
+            sys.path.insert(0, str(ROOT_DIR))
+        from pipeline.stages.executor_v3 import run_autonomous_hypothesis_repair_v3
+
+        hypotheses = payload.get("items", [{}])[0].get("hypotheses", [])
+        wrong = next((row.get("hypothesis_id") for row in hypotheses if "flush" in str(row.get("hypothesis_id", "")).lower()), None)
+        result = run_autonomous_hypothesis_repair_v3(
+            payload,
+            target=target,
+            access_mode=str(mode_res.get("data", {}).get("access_mode") or "read_only"),
+            confirm_write=bool(confirm_write),
+            dispatch=lambda operation: send_sketchup_cmd("create_reconstruction_item_v3", operation, timeout=50.0),
+            readback=lambda code: send_sketchup_cmd("get_semantic_item", {"item_code": code}, timeout=15.0),
+            initial_hypothesis_id=wrong if test_wrong_hypothesis else None,
+        )
+        output_dir = root / "OUTPUT" / "VERIFICATION" / "reconstruction" / str(run_id)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "autonomous-repair-v3.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        return json.dumps(result, ensure_ascii=False)
+    except RouterFailure as exc:
+        return json.dumps(exc.as_result(), ensure_ascii=False)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, ImportError) as exc:
+        return json.dumps({"status": "error", "error": "EXECUTE_RECONSTRUCTION_V3_FAILED", "detail": str(exc)}, ensure_ascii=False)
+
+
+@mcp.tool()
+def ai_dg_compare_views_v3(view_back_path: str, run_id: str, project_path: str = "E:/AI-DG") -> str:
+    """Compare one revision-consistent view-back snapshot against every linked view contract."""
+    root, denied = _pipeline_root(project_path)
+    if denied:
+        return json.dumps(denied, ensure_ascii=False)
+    if not __import__("re").fullmatch(r"[A-Za-z0-9._-]{1,120}", str(run_id)):
+        return json.dumps({"status": "error", "error": "INVALID_RUN_ID"}, ensure_ascii=False)
+    work = root / "WORK" / "reconstruction" / str(run_id)
+    snapshot_path = Path(view_back_path).expanduser().resolve()
+    try:
+        if not snapshot_path.is_file() or not snapshot_path.is_relative_to(root):
+            return json.dumps({"status": "error", "error": "VIEW_BACK_OUTSIDE_PROJECT", "path": str(snapshot_path)}, ensure_ascii=False)
+        registry_path = work / "view-registry-v3.json"
+        if not registry_path.is_file():
+            return json.dumps({"status": "error", "error": "VIEW_REGISTRY_V3_NOT_FOUND", "run_id": run_id}, ensure_ascii=False)
+        snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        if str(ROOT_DIR) not in sys.path:
+            sys.path.insert(0, str(ROOT_DIR))
+        from pipeline.stages.repair_loop_v3 import plan_repairs_v3
+        from pipeline.stages.view_verification_v3 import compare_view_back_v3
+
+        comparison = compare_view_back_v3(snapshot, registry["views"])
+        repair_plan = plan_repairs_v3(comparison, 1)
+        verification_dir = root / "OUTPUT" / "VERIFICATION" / "reconstruction" / str(run_id)
+        verification_dir.mkdir(parents=True, exist_ok=True)
+        (verification_dir / "view-comparison-v3.json").write_text(json.dumps(comparison, ensure_ascii=False, indent=2), encoding="utf-8")
+        (verification_dir / "repair-plan-v3.json").write_text(json.dumps(repair_plan, ensure_ascii=False, indent=2), encoding="utf-8")
+        return json.dumps({"status": comparison["status"], "comparison": comparison, "repair_plan": repair_plan}, ensure_ascii=False)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, ImportError) as exc:
+        return json.dumps({"status": "error", "error": "VIEW_COMPARISON_V3_FAILED", "detail": str(exc)}, ensure_ascii=False)
+
+
+@mcp.tool()
+def ai_dg_view_back_sketchup_v3(run_id: str, project_path: str = "E:/AI-DG") -> str:
+    """Read an exact SketchUp instance and verify every V3 item/view at one model revision."""
+    root, denied = _pipeline_root(project_path)
+    if denied:
+        return json.dumps(denied, ensure_ascii=False)
+    if not __import__("re").fullmatch(r"[A-Za-z0-9._-]{1,120}", str(run_id)):
+        return json.dumps({"status": "error", "error": "INVALID_RUN_ID"}, ensure_ascii=False)
+    work = root / "WORK" / "reconstruction" / str(run_id)
+    build_path = root / "OUTPUT" / "MODEL" / "reconstruction" / str(run_id) / "build-ir-v3.json"
+    try:
+        target_record = INSTANCE_ROUTER.resolve(require_explicit=True)
+        target = INSTANCE_ROUTER.public_target(target_record)
+        registry = json.loads((work / "view-registry-v3.json").read_text(encoding="utf-8"))
+        sections = json.loads((work / "section-profile-graph-v3.json").read_text(encoding="utf-8"))
+        build_ir = json.loads(build_path.read_text(encoding="utf-8"))
+        if str(ROOT_DIR) not in sys.path:
+            sys.path.insert(0, str(ROOT_DIR))
+        from pipeline.stages.sketchup_view_back_v3 import view_back_from_sketchup_readback_v3
+        from pipeline.stages.view_verification_v3 import compare_view_back_v3
+
+        revision = int(time.time_ns())
+        results = []
+        for operation in build_ir.get("operations", []):
+            item_id = str(operation.get("item_id") or "")
+            views = [view for view in registry["views"] if item_id in view.get("item_refs", [])]
+            response = send_sketchup_cmd("get_semantic_item", {"item_code": item_id}, timeout=15.0)
+            snapshot = view_back_from_sketchup_readback_v3(item_id, response, views, sections, revision)
+            comparison = compare_view_back_v3(snapshot, views)
+            results.append({"item_id": item_id, "snapshot": snapshot, "comparison": comparison})
+        status = "PASS" if results and all(row["comparison"]["status"] == "PASS" for row in results) else "FAIL"
+        output_dir = root / "OUTPUT" / "VERIFICATION" / "reconstruction" / str(run_id)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        artifact = {"schema_version": 3, "run_id": run_id, "status": status, "model_revision": revision, "target": target, "items": results}
+        (output_dir / "sketchup-view-back-v3.json").write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")
+        return json.dumps(artifact, ensure_ascii=False)
+    except RouterFailure as exc:
+        return json.dumps(exc.as_result(), ensure_ascii=False)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, ImportError) as exc:
+        return json.dumps({"status": "error", "error": "SKETCHUP_VIEW_BACK_V3_FAILED", "detail": str(exc)}, ensure_ascii=False)
 
 
 @mcp.tool()
